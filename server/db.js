@@ -7,7 +7,7 @@ if (!fs.existsSync(dataDir)) {
   fs.mkdirSync(dataDir, { recursive: true });
 }
 
-const dbPath = path.join(dataDir, 'monitoring.db');
+const dbPath = process.env.DB_PATH || path.join(dataDir, 'monitoring.db');
 const db = new Database(dbPath);
 
 // Enable WAL mode for optimal concurrent reads/writes
@@ -28,6 +28,7 @@ db.exec(`
     ssl_check_enabled INTEGER DEFAULT 1,
     group_tag TEXT DEFAULT 'Production',
     is_active INTEGER DEFAULT 1,
+    custom_headers TEXT DEFAULT '',
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   );
@@ -196,7 +197,8 @@ function seedDatabaseIfEmpty() {
       keyword_check: 'healthy',
       ssl_check_enabled: 0,
       group_tag: 'Infrastructure',
-      is_active: 1
+      is_active: 1,
+      custom_headers: ''
     },
     {
       name: 'Cloudflare DNS Gateway',
@@ -208,7 +210,8 @@ function seedDatabaseIfEmpty() {
       keyword_check: '',
       ssl_check_enabled: 1,
       group_tag: 'Core Network',
-      is_active: 1
+      is_active: 1,
+      custom_headers: ''
     },
     {
       name: 'Google Public Portal',
@@ -220,7 +223,8 @@ function seedDatabaseIfEmpty() {
       keyword_check: '',
       ssl_check_enabled: 1,
       group_tag: 'Core Network',
-      is_active: 1
+      is_active: 1,
+      custom_headers: ''
     },
     {
       name: 'Wikipedia Global Encyclopedia',
@@ -232,7 +236,8 @@ function seedDatabaseIfEmpty() {
       keyword_check: 'Wikipedia',
       ssl_check_enabled: 1,
       group_tag: 'Landing Pages',
-      is_active: 1
+      is_active: 1,
+      custom_headers: ''
     },
     {
       name: 'GitHub System Status API',
@@ -244,7 +249,8 @@ function seedDatabaseIfEmpty() {
       keyword_check: '',
       ssl_check_enabled: 1,
       group_tag: 'APIs & Services',
-      is_active: 1
+      is_active: 1,
+      custom_headers: ''
     },
     {
       name: 'Internet Archive Gateway',
@@ -256,7 +262,8 @@ function seedDatabaseIfEmpty() {
       keyword_check: '',
       ssl_check_enabled: 1,
       group_tag: 'Landing Pages',
-      is_active: 1
+      is_active: 1,
+      custom_headers: ''
     },
     {
       name: 'Mock Production Flaky API',
@@ -268,7 +275,8 @@ function seedDatabaseIfEmpty() {
       keyword_check: 'ok',
       ssl_check_enabled: 0,
       group_tag: 'Staging & QA',
-      is_active: 1
+      is_active: 1,
+      custom_headers: ''
     }
   ];
 
@@ -277,7 +285,7 @@ function seedDatabaseIfEmpty() {
 
   const insertAll = db.transaction(() => {
     for (const mon of defaultMonitors) {
-      const res = insertStmt.run(mon);
+      const res = insertStmt.run({ custom_headers: '', ...mon });
       const monitorId = res.lastInsertRowid;
 
       // Seed 40 historical heartbeats over the last 2 hours
