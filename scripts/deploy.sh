@@ -1,24 +1,43 @@
 #!/usr/bin/env bash
 set -e
 
+# Load environment & PATH for non-interactive SSH
+export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+[ -s "$HOME/.nvm/nvm.sh" ] && \. "$HOME/.nvm/nvm.sh" 2>/dev/null || true
+[ -s "$HOME/.bashrc" ] && source "$HOME/.bashrc" 2>/dev/null || true
+[ -s "$HOME/.profile" ] && source "$HOME/.profile" 2>/dev/null || true
+
 echo "=========================================="
 echo "🚀 Deploying NOC Website Monitoring..."
 echo "=========================================="
 
 APP_DIR="/var/www/noc-monitor"
 
-# Ensure directory exists
 if [ ! -d "$APP_DIR" ]; then
-    echo "❌ Directory $APP_DIR does not exist."
-    exit 1
+    echo "📁 Creating app directory $APP_DIR..."
+    mkdir -p "$APP_DIR"
 fi
 
 cd "$APP_DIR"
 
-# Pull latest code from git
-echo "📥 Pulling latest changes from main branch..."
-git fetch origin main
-git reset --hard origin/main
+# Ensure Git repository is set up
+if [ ! -d ".git" ]; then
+    echo "📥 First-time setup: cloning repository..."
+    cd /var/www
+    rm -rf "$APP_DIR"
+    git clone https://github.com/paulchike/Website-monitoring.git noc-monitor
+    cd "$APP_DIR"
+else
+    echo "📥 Pulling latest changes from main branch..."
+    git fetch origin main
+    git reset --hard origin/main
+fi
+
+# Ensure PM2 is available
+if ! command -v pm2 &> /dev/null; then
+    echo "📦 PM2 not found, installing PM2 globally..."
+    npm install -g pm2
+fi
 
 # Install dependencies (compiles native SQLite if needed)
 echo "📦 Installing production dependencies..."
@@ -41,7 +60,15 @@ if curl -sf http://127.0.0.1:3000/health > /dev/null; then
     echo "✅ Deployment successful! Service is healthy."
     echo "=========================================="
 else
-    echo "❌ Health check failed after deployment!"
-    pm2 logs noc-monitor --lines 30 --nostream
-    exit 1
+    echo "⚠️ Direct localhost check pending, retrying in 3 seconds..."
+    sleep 3
+    if curl -sf http://127.0.0.1:3000/health > /dev/null; then
+        echo "=========================================="
+        echo "✅ Deployment successful! Service is healthy."
+        echo "=========================================="
+    else
+        echo "❌ Health check failed after deployment!"
+        pm2 logs noc-monitor --lines 30 --nostream || true
+        exit 1
+    fi
 fi

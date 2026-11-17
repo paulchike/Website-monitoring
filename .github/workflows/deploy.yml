@@ -47,5 +47,17 @@ jobs:
           password: ${{ secrets.DO_PASSWORD }}
           port: ${{ secrets.DO_PORT || 22 }}
           script: |
+            export PATH=$PATH:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin
+            [ -s "$HOME/.nvm/nvm.sh" ] && \. "$HOME/.nvm/nvm.sh" 2>/dev/null || true
+            [ -s "$HOME/.bashrc" ] && source "$HOME/.bashrc" 2>/dev/null || true
+
+            # If directory or repo does not exist yet on server, auto-clone it
+            if [ ! -d "/var/www/noc-monitor/.git" ]; then
+              echo "Creating /var/www and cloning repository..."
+              mkdir -p /var/www
+              rm -rf /var/www/noc-monitor
+              git clone https://github.com/paulchike/Website-monitoring.git /var/www/noc-monitor
+            fi
+
             chmod +x /var/www/noc-monitor/scripts/deploy.sh
-            /var/www/noc-monitor/scripts/deploy.sh
+            bash /var/www/noc-monitor/scripts/deploy.sh
