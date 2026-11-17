@@ -44,6 +44,7 @@ jobs:
           host: ${{ secrets.DO_HOST }}
           username: ${{ secrets.DO_USERNAME }}
           key: ${{ secrets.DO_SSH_KEY }}
+          password: ${{ secrets.DO_PASSWORD }}
           port: ${{ secrets.DO_PORT || 22 }}
           script: |
             chmod +x /var/www/noc-monitor/scripts/deploy.sh
