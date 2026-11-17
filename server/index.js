@@ -52,12 +52,12 @@ app.use((req, res, next) => {
 setupWebSocket(server, scheduler);
 
 // Start server and monitoring scheduler
-server.listen(PORT, () => {
+server.listen(PORT, '0.0.0.0', () => {
   console.log('================================================================');
   console.log('       NOC REAL-TIME WEBSITE & LANDING PAGE MONITOR');
   console.log('================================================================');
-  console.log(`[HTTP] Server operational on: http://localhost:${PORT}`);
-  console.log(`[WS]   Real-time WebSocket stream on: ws://localhost:${PORT}/ws`);
+  console.log(`[HTTP] Server operational on: http://0.0.0.0:${PORT}`);
+  console.log(`[WS]   Real-time WebSocket stream on: ws://0.0.0.0:${PORT}/ws`);
   console.log(`[DB]   SQLite Engine Active in WAL mode`);
   console.log('================================================================');
 
