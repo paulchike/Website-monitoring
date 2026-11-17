@@ -86,6 +86,26 @@
         </svg>
         <span>+ NEW TARGET</span>
       </button>
+
+      <!-- RBAC Session & User Group Badge -->
+      <div class="user-auth-badge-wrap" style="display: flex; align-items: center; gap: 6px;">
+        <button id="btn-user-auth" class="btn btn-secondary btn-user-badge" title="Access Control: Click to view permissions, switch group, or log in" style="padding: 6px 10px; display: flex; align-items: center; gap: 8px;">
+          <span id="user-role-icon" class="role-icon">🛡️</span>
+          <div style="display: flex; flex-direction: column; text-align: left; line-height: 1.1;">
+            <span id="user-display-name" style="font-weight: 700; font-size: 11px; color: #fff;">Admin</span>
+            <span id="user-group-tag" style="font-size: 9px; color: #94a3b8; letter-spacing: 0.3px;">NOC Administrators</span>
+          </div>
+        </button>
+
+        <button id="btn-open-rbac" class="btn btn-icon hidden" title="Manage RBAC User Groups & Permissions (Admin Only)" style="border-color: rgba(168, 85, 247, 0.4); color: #c084fc;">
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+            <circle cx="9" cy="7" r="4"></circle>
+            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+          </svg>
+        </button>
+      </div>
     </div>
   </header>
 
@@ -657,6 +677,210 @@
 
       <div class="dialog-footer">
         <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-report').close()">Close</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Modal 4: Authentication & RBAC User Status Modal -->
+  <dialog id="modal-auth" class="noc-dialog">
+    <div class="dialog-box" style="max-width: 520px;">
+      <div class="dialog-header">
+        <div class="dialog-title-wrap">
+          <span class="dialog-badge" style="background: rgba(99, 102, 241, 0.2); color: #818cf8; border-color: rgba(99, 102, 241, 0.4);">RBAC ACCESS</span>
+          <h2 id="modal-auth-title">NOC Session & Access Control</h2>
+        </div>
+        <button class="btn-close-dialog" onclick="document.getElementById('modal-auth').close()">✕</button>
+      </div>
+
+      <div class="dialog-form" style="padding: 20px;">
+        <!-- Currently Logged In Card -->
+        <div id="auth-current-card" class="auth-status-card" style="background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span id="auth-card-avatar" style="font-size: 24px;">🛡️</span>
+              <div>
+                <strong id="auth-card-name" style="color: #fff; font-size: 14px; display: block;">Lead NOC Administrator</strong>
+                <span id="auth-card-sub" style="font-size: 11px; color: #94a3b8;">Group: NOC Administrators • Role: ADMIN</span>
+              </div>
+            </div>
+            <button id="btn-auth-logout" class="btn btn-secondary btn-sm" style="color: #f87171; border-color: rgba(239,68,68,0.3);">LOG OUT</button>
+          </div>
+
+          <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 8px; letter-spacing: 0.5px;">Active Group Permissions:</div>
+          <div id="auth-perm-list" style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px;">
+            <div class="perm-badge perm-allowed" id="perm-add"><span class="perm-icon">✅</span> <span>Add New URLs</span></div>
+            <div class="perm-badge perm-allowed" id="perm-edit"><span class="perm-icon">✅</span> <span>Edit Target URLs</span></div>
+            <div class="perm-badge perm-allowed" id="perm-del"><span class="perm-icon">✅</span> <span>Delete Targets</span></div>
+            <div class="perm-badge perm-allowed" id="perm-tog"><span class="perm-icon">✅</span> <span>Toggle / Pause</span></div>
+          </div>
+        </div>
+
+        <!-- Quick Switcher for Demo / Testing -->
+        <div style="margin-bottom: 20px;">
+          <label style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 700; letter-spacing: 0.5px;">Quick Switch User Group (Preloaded Credentials)</label>
+          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px;">
+            <button type="button" class="btn btn-secondary btn-sm quick-login-btn" data-user="admin" data-pass="admin123" style="flex-direction: column; padding: 10px 6px; text-align: center;">
+              <span style="font-size: 16px;">🛡️</span>
+              <strong style="color: #a78bfa; font-size: 12px; margin-top: 4px;">Admin</strong>
+              <span style="font-size: 10px; color: #64748b;">Add & Edit & Delete</span>
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm quick-login-btn" data-user="operator" data-pass="operator123" style="flex-direction: column; padding: 10px 6px; text-align: center;">
+              <span style="font-size: 16px;">🔧</span>
+              <strong style="color: #38bdf8; font-size: 12px; margin-top: 4px;">Operator</strong>
+              <span style="font-size: 10px; color: #64748b;">Add & Edit URLs</span>
+            </button>
+            <button type="button" class="btn btn-secondary btn-sm quick-login-btn" data-user="viewer" data-pass="viewer123" style="flex-direction: column; padding: 10px 6px; text-align: center;">
+              <span style="font-size: 16px;">👁️</span>
+              <strong style="color: #34d399; font-size: 12px; margin-top: 4px;">Viewer</strong>
+              <span style="font-size: 10px; color: #64748b;">Read-Only / Lock</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Manual Login Form -->
+        <form id="form-auth-login" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px;">
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label for="auth-username" style="font-size: 11px; color: #cbd5e1;">Username</label>
+            <input type="text" id="auth-username" required placeholder="admin / operator / viewer" style="background: #060b17; border-color: rgba(255,255,255,0.15);" />
+          </div>
+          <div class="form-group" style="margin-bottom: 16px;">
+            <label for="auth-password" style="font-size: 11px; color: #cbd5e1;">Password</label>
+            <input type="password" id="auth-password" required placeholder="••••••••" style="background: #060b17; border-color: rgba(255,255,255,0.15);" />
+          </div>
+          <div id="auth-error-msg" class="hidden" style="color: #f87171; font-size: 12px; margin-bottom: 12px; padding: 8px; background: rgba(239, 68, 68, 0.1); border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.3);"></div>
+          <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">Sign In to Session</button>
+        </form>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Modal 5: RBAC User Group & Permissions Management Modal -->
+  <dialog id="modal-rbac" class="noc-dialog dialog-large">
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <div class="dialog-title-wrap">
+          <span class="dialog-badge" style="background: rgba(168, 85, 247, 0.2); color: #c084fc; border-color: rgba(168, 85, 247, 0.4);">RBAC ADMIN</span>
+          <h2>Role-Based Access Control & User Groups</h2>
+        </div>
+        <button class="btn-close-dialog" onclick="document.getElementById('modal-rbac').close()">✕</button>
+      </div>
+
+      <div class="dialog-form" style="padding: 20px;">
+        <div class="rbac-tabs" style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
+          <button type="button" class="btn btn-sm btn-secondary rbac-tab active" data-tab="groups">User Groups & Permissions</button>
+          <button type="button" class="btn btn-sm btn-secondary rbac-tab" data-tab="users">Users & Assignments</button>
+          <button type="button" class="btn btn-sm btn-secondary rbac-tab" data-tab="audit">Audit Log</button>
+        </div>
+
+        <!-- Tab 1: Groups Matrix -->
+        <div id="rbac-pane-groups" class="rbac-pane">
+          <p style="font-size: 12px; color: #94a3b8; margin-bottom: 16px;">
+            Configure which user groups are authorized to <strong>Add new URLs</strong> and <strong>Edit existing URLs</strong>.
+          </p>
+          <div class="detail-table-wrap">
+            <table class="noc-table noc-table-compact">
+              <thead>
+                <tr>
+                  <th>GROUP NAME</th>
+                  <th>DESCRIPTION</th>
+                  <th>MEMBERS</th>
+                  <th>CAN ADD URL</th>
+                  <th>CAN EDIT URL</th>
+                  <th>CAN DELETE</th>
+                  <th>CAN TOGGLE</th>
+                  <th>ACTION</th>
+                </tr>
+              </thead>
+              <tbody id="rbac-groups-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 2: Users List -->
+        <div id="rbac-pane-users" class="rbac-pane hidden">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+            <p style="font-size: 12px; color: #94a3b8; margin: 0;">Registered accounts and their assigned User Group.</p>
+            <button id="btn-show-add-user" class="btn btn-primary btn-sm">+ CREATE USER</button>
+          </div>
+
+          <!-- Add User Sub-form -->
+          <form id="form-create-user" class="hidden" style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 16px; margin-bottom: 20px;">
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label>Username *</label>
+                <input type="text" id="new-user-username" required placeholder="e.g. ops_user" />
+              </div>
+              <div class="form-group flex-1">
+                <label>Display Name *</label>
+                <input type="text" id="new-user-display" required placeholder="e.g. Operations Staff" />
+              </div>
+              <div class="form-group flex-1">
+                <label>Password *</label>
+                <input type="password" id="new-user-password" required placeholder="Minimum 4 chars" />
+              </div>
+            </div>
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label>User Group *</label>
+                <select id="new-user-group" class="noc-select"></select>
+              </div>
+              <div class="form-group flex-1">
+                <label>Role</label>
+                <select id="new-user-role" class="noc-select">
+                  <option value="OPERATOR">OPERATOR (Add & Edit URLs)</option>
+                  <option value="ADMIN">ADMIN (Full Control)</option>
+                  <option value="VIEWER">VIEWER (Read-Only)</option>
+                </select>
+              </div>
+            </div>
+            <div style="display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px;">
+              <button type="button" class="btn btn-secondary btn-sm" onclick="document.getElementById('form-create-user').classList.add('hidden')">Cancel</button>
+              <button type="submit" class="btn btn-primary btn-sm">Save User</button>
+            </div>
+          </form>
+
+          <div class="detail-table-wrap">
+            <table class="noc-table noc-table-compact">
+              <thead>
+                <tr>
+                  <th>USERNAME</th>
+                  <th>DISPLAY NAME</th>
+                  <th>ASSIGNED GROUP</th>
+                  <th>ROLE</th>
+                  <th>CAN ADD URL</th>
+                  <th>CAN EDIT URL</th>
+                  <th>STATUS</th>
+                </tr>
+              </thead>
+              <tbody id="rbac-users-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Tab 3: Audit Logs -->
+        <div id="rbac-pane-audit" class="rbac-pane hidden">
+          <p style="font-size: 12px; color: #94a3b8; margin-bottom: 16px;">
+            Cryptographically logged record of all URL adds, edits, deletions, and user actions.
+          </p>
+          <div class="detail-table-wrap">
+            <table class="noc-table noc-table-compact">
+              <thead>
+                <tr>
+                  <th>TIMESTAMP</th>
+                  <th>USER</th>
+                  <th>ACTION</th>
+                  <th>DETAILS</th>
+                  <th>IP</th>
+                </tr>
+              </thead>
+              <tbody id="rbac-audit-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="dialog-footer">
+        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-rbac').close()">Close</button>
       </div>
     </div>
   </dialog>

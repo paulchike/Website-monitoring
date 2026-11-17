@@ -29,6 +29,7 @@ jobs:
           node --check server/checker.js
           node --check server/api.js
           node --check server/db.js
+          node --check server/auth.js
           node --check server/scheduler.js
           node --check server/ws.js
           echo "✅ All server files passed syntax checks!"

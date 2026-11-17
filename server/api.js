@@ -1,8 +1,247 @@
 const express = require('express');
 const { queries, db } = require('./db');
 const scheduler = require('./scheduler');
+const {
+  authenticate,
+  requireAuth,
+  requirePermission,
+  logAudit,
+  generateToken,
+  verifyPassword,
+  hashPassword
+} = require('./auth');
 
 const router = express.Router();
+
+// Attach user session to all incoming requests
+router.use(authenticate);
+
+/* ========================================================================
+   Authentication & RBAC Routes
+   ======================================================================== */
+
+// POST /api/auth/login
+router.post('/auth/login', (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ success: false, error: 'Username and password are required' });
+    }
+
+    const user = queries.getUserByUsername.get(username.trim().toLowerCase());
+    if (!user) {
+      return res.status(401).json({ success: false, error: 'Invalid username or password' });
+    }
+
+    if (!user.is_active) {
+      return res.status(403).json({ success: false, error: 'Account has been deactivated. Contact an administrator.' });
+    }
+
+    const isValid = verifyPassword(password, user.password_hash, user.salt);
+    if (!isValid) {
+      return res.status(401).json({ success: false, error: 'Invalid username or password' });
+    }
+
+    queries.updateUserLastLogin.run(user.id);
+
+    const token = generateToken(user);
+    logAudit(req, 'LOGIN', user.id, `User ${user.username} logged in successfully`);
+
+    res.json({
+      success: true,
+      token,
+      user: {
+        id: user.id,
+        username: user.username,
+        displayName: user.display_name,
+        email: user.email,
+        role: user.role,
+        groupId: user.group_id,
+        groupName: user.group_name || 'Ungrouped',
+        permissions: {
+          can_add_url: Boolean(user.role === 'ADMIN' || user.can_add_url),
+          can_edit_url: Boolean(user.role === 'ADMIN' || user.can_edit_url),
+          can_delete_url: Boolean(user.role === 'ADMIN' || user.can_delete_url),
+          can_toggle_url: Boolean(user.role === 'ADMIN' || user.can_toggle_url),
+          can_manage_users: Boolean(user.role === 'ADMIN' || user.can_manage_users)
+        }
+      }
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/auth/me
+router.get('/auth/me', (req, res) => {
+  if (!req.user) {
+    return res.json({
+      success: true,
+      user: null,
+      isGuest: true,
+      permissions: {
+        can_add_url: false,
+        can_edit_url: false,
+        can_delete_url: false,
+        can_toggle_url: false,
+        can_manage_users: false
+      }
+    });
+  }
+  res.json({
+    success: true,
+    user: req.user,
+    isGuest: false,
+    permissions: req.user.permissions
+  });
+});
+
+// POST /api/auth/logout
+router.post('/auth/logout', (req, res) => {
+  if (req.user) {
+    logAudit(req, 'LOGOUT', req.user.id, `User ${req.user.username} logged out`);
+  }
+  res.json({ success: true, message: 'Logged out successfully' });
+});
+
+// GET /api/auth/groups
+router.get('/auth/groups', (req, res) => {
+  try {
+    const groups = queries.getAllGroups.all();
+    res.json({ success: true, groups });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PUT /api/auth/groups/:id (Admin update group permissions)
+router.put('/auth/groups/:id', requireAuth, requirePermission('can_manage_users'), (req, res) => {
+  try {
+    const groupId = Number(req.params.id);
+    const existing = queries.getGroupById.get(groupId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Group not found' });
+    }
+
+    const {
+      name = existing.name,
+      description = existing.description,
+      can_add_url = existing.can_add_url,
+      can_edit_url = existing.can_edit_url,
+      can_delete_url = existing.can_delete_url,
+      can_toggle_url = existing.can_toggle_url,
+      can_manage_users = existing.can_manage_users
+    } = req.body;
+
+    queries.updateGroup.run({
+      id: groupId,
+      name: name.trim(),
+      description: description ? description.trim() : '',
+      can_add_url: can_add_url ? 1 : 0,
+      can_edit_url: can_edit_url ? 1 : 0,
+      can_delete_url: can_delete_url ? 1 : 0,
+      can_toggle_url: can_toggle_url ? 1 : 0,
+      can_manage_users: can_manage_users ? 1 : 0
+    });
+
+    logAudit(req, 'UPDATE_GROUP', groupId, `Updated permissions for group ${name}`);
+    res.json({ success: true, group: queries.getGroupById.get(groupId) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/auth/users (List users)
+router.get('/auth/users', requireAuth, (req, res) => {
+  try {
+    const users = queries.getAllUsers.all();
+    res.json({ success: true, users });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/auth/users (Create user)
+router.post('/auth/users', requireAuth, requirePermission('can_manage_users'), (req, res) => {
+  try {
+    const { username, password, display_name, email = '', role = 'OPERATOR', group_id } = req.body;
+    if (!username || !password || !display_name) {
+      return res.status(400).json({ success: false, error: 'Username, password and display name required' });
+    }
+
+    const existing = queries.getUserByUsername.get(username.trim().toLowerCase());
+    if (existing) {
+      return res.status(400).json({ success: false, error: 'Username is already taken' });
+    }
+
+    const { hash, salt } = hashPassword(password);
+    const result = queries.createUser.run({
+      username: username.trim().toLowerCase(),
+      password_hash: hash,
+      salt: salt,
+      display_name: display_name.trim(),
+      email: email.trim(),
+      role: role.toUpperCase(),
+      group_id: Number(group_id) || 2,
+      is_active: 1
+    });
+
+    const newId = result.lastInsertRowid;
+    logAudit(req, 'CREATE_USER', newId, `Created user ${username} with role ${role}`);
+    res.status(201).json({ success: true, user: queries.getUserById.get(newId) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// PUT /api/auth/users/:id (Update user role / group)
+router.put('/auth/users/:id', requireAuth, requirePermission('can_manage_users'), (req, res) => {
+  try {
+    const userId = Number(req.params.id);
+    const existing = queries.getUserById.get(userId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'User not found' });
+    }
+
+    const {
+      display_name = existing.display_name,
+      email = existing.email,
+      role = existing.role,
+      group_id = existing.group_id,
+      is_active = existing.is_active,
+      password = null
+    } = req.body;
+
+    queries.updateUser.run({
+      id: userId,
+      display_name: display_name.trim(),
+      email: email ? email.trim() : '',
+      role: role.toUpperCase(),
+      group_id: Number(group_id),
+      is_active: is_active ? 1 : 0
+    });
+
+    if (password && password.trim().length >= 4) {
+      const { hash, salt } = hashPassword(password.trim());
+      queries.updateUserPassword.run(hash, salt, userId);
+    }
+
+    logAudit(req, 'UPDATE_USER', userId, `Updated user profile/role for ${existing.username}`);
+    res.json({ success: true, user: queries.getUserById.get(userId) });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// GET /api/auth/audit-logs
+router.get('/auth/audit-logs', requireAuth, (req, res) => {
+  try {
+    const logs = queries.getRecentAuditLogs.all(100);
+    res.json({ success: true, auditLogs: logs });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
 
 // Helper to compute uptime percentage
 function calculateUptime(monitorId, intervalClause) {
@@ -96,8 +335,8 @@ router.get('/monitors/:id', (req, res) => {
   }
 });
 
-// POST /api/monitors
-router.post('/monitors', (req, res) => {
+// POST /api/monitors (RBAC: Requires can_add_url permission)
+router.post('/monitors', requireAuth, requirePermission('can_add_url'), (req, res) => {
   try {
     const {
       name,
@@ -137,14 +376,16 @@ router.post('/monitors', (req, res) => {
     scheduler.restartMonitor(newId);
     scheduler.broadcast('monitor_created', newMonitor);
 
+    logAudit(req, 'ADD_URL', newId, `Added monitor "${name.trim()}" (${url.trim()})`);
+
     res.status(201).json({ success: true, monitor: newMonitor });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// PUT /api/monitors/:id
-router.put('/monitors/:id', (req, res) => {
+// PUT /api/monitors/:id (RBAC: Requires can_edit_url permission)
+router.put('/monitors/:id', requireAuth, requirePermission('can_edit_url'), (req, res) => {
   try {
     const monitorId = Number(req.params.id);
     const existing = queries.getMonitorById.get(monitorId);
@@ -185,14 +426,16 @@ router.put('/monitors/:id', (req, res) => {
     scheduler.restartMonitor(monitorId);
     scheduler.broadcast('monitor_updated', updated);
 
+    logAudit(req, 'EDIT_URL', monitorId, `Updated monitor "${name.trim()}" (${url.trim()})`);
+
     res.json({ success: true, monitor: updated });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// DELETE /api/monitors/:id
-router.delete('/monitors/:id', (req, res) => {
+// DELETE /api/monitors/:id (RBAC: Requires can_delete_url permission)
+router.delete('/monitors/:id', requireAuth, requirePermission('can_delete_url'), (req, res) => {
   try {
     const monitorId = Number(req.params.id);
     const existing = queries.getMonitorById.get(monitorId);
@@ -204,20 +447,24 @@ router.delete('/monitors/:id', (req, res) => {
     queries.deleteMonitor.run(monitorId);
     scheduler.broadcast('monitor_deleted', { id: monitorId });
 
+    logAudit(req, 'DELETE_URL', monitorId, `Deleted monitor "${existing.name}"`);
+
     res.json({ success: true, message: 'Monitor removed successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// POST /api/monitors/:id/toggle (Pause / Resume)
-router.post('/monitors/:id/toggle', (req, res) => {
+// POST /api/monitors/:id/toggle (RBAC: Requires can_toggle_url permission)
+router.post('/monitors/:id/toggle', requireAuth, requirePermission('can_toggle_url'), (req, res) => {
   try {
     const monitorId = Number(req.params.id);
     queries.toggleMonitorActive.run(monitorId);
     const updated = queries.getMonitorById.get(monitorId);
     scheduler.restartMonitor(monitorId);
     scheduler.broadcast('monitor_updated', updated);
+
+    logAudit(req, 'TOGGLE_URL', monitorId, `Toggled active state for "${updated.name}"`);
 
     res.json({ success: true, monitor: updated });
   } catch (err) {

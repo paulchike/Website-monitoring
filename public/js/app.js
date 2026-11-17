@@ -17,6 +17,15 @@ class NOCDashboard {
     this.audioCtx = null;
     this.streamLogs = [];
     this.isStreamOpen = false;
+    this.token = localStorage.getItem('noc_token') || null;
+    this.currentUser = null;
+    this.userPermissions = {
+      can_add_url: false,
+      can_edit_url: false,
+      can_delete_url: false,
+      can_toggle_url: false,
+      can_manage_users: false
+    };
 
     this.init();
   }
@@ -25,6 +34,7 @@ class NOCDashboard {
     this.initClock();
     this.initSound();
     this.initEventListeners();
+    this.initAuth();
     this.initWebSocket();
     this.setView(this.currentView);
     this.fetchInitialSummary();
@@ -646,8 +656,8 @@ class NOCDashboard {
               <span class="${httpCodeColor}" style="font-weight: 700; font-size: 10px;">${httpCodeBadge}</span>
               <div style="display: flex; gap: 4px;">
                 <button class="btn-card-action" onclick="window.app.triggerPing(${m.id})" title="Ping this endpoint immediately">PING</button>
-                <button class="btn-card-action" onclick="window.app.toggleActive(${m.id})" title="Pause / Resume">${m.is_active ? 'PAUSE' : 'RESUME'}</button>
-                <button class="btn-card-action" onclick="window.app.openEditById(${m.id})" title="Edit Target & Headers">EDIT</button>
+                <button class="btn-card-action ${this.userPermissions.can_toggle_url ? '' : 'btn-locked'}" onclick="window.app.toggleActive(${m.id})" title="${this.userPermissions.can_toggle_url ? 'Pause / Resume' : 'Toggle locked'}">${m.is_active ? 'PAUSE' : 'RESUME'}</button>
+                <button class="btn-card-action ${this.userPermissions.can_edit_url ? '' : 'btn-locked'}" onclick="window.app.openEditById(${m.id})" title="${this.userPermissions.can_edit_url ? 'Edit Target & Headers' : 'Edit locked: Requires Operator or Admin role'}">${this.userPermissions.can_edit_url ? 'EDIT' : '🔒 EDIT'}</button>
                 <button class="btn-card-action" onclick="window.app.openDetails(${m.id})" title="Inspect Telemetry">INSPECT</button>
               </div>
             </div>
@@ -736,7 +746,7 @@ class NOCDashboard {
           <td>${ticksHtml}</td>
           <td style="text-align: right;" onclick="event.stopPropagation()">
             <button class="btn-card-action" onclick="window.app.triggerPing(${m.id})">PING</button>
-            <button class="btn-card-action" onclick="window.app.openEditById(${m.id})">EDIT</button>
+            <button class="btn-card-action ${this.userPermissions.can_edit_url ? '' : 'btn-locked'}" onclick="window.app.openEditById(${m.id})" title="${this.userPermissions.can_edit_url ? 'Edit Target' : 'Edit locked'}">${this.userPermissions.can_edit_url ? 'EDIT' : '🔒 EDIT'}</button>
             <button class="btn-card-action" onclick="window.app.openDetails(${m.id})">INSPECT</button>
           </td>
         </tr>
@@ -963,6 +973,12 @@ class NOCDashboard {
      Target Add / Edit Dialog
      ======================================================================== */
   openAddModal() {
+    if (!this.userPermissions.can_add_url) {
+      this.showToast('Permission Denied: Your user group cannot add new targets. Please log in as an Operator or Admin.', 'error');
+      this.openAuthModal();
+      return;
+    }
+
     const modal = document.getElementById('modal-target');
     const form = document.getElementById('form-target');
     if (!modal || !form) return;
@@ -980,11 +996,22 @@ class NOCDashboard {
   }
 
   openEditById(monitorId) {
+    if (!this.userPermissions.can_edit_url) {
+      this.showToast('Permission Denied: Your user group cannot edit targets. Please log in as an Operator or Admin.', 'error');
+      this.openAuthModal();
+      return;
+    }
     const m = this.monitors.find(item => item.id === monitorId);
     if (m) this.openEditModal(m);
   }
 
   openEditModal(monitor) {
+    if (!this.userPermissions.can_edit_url) {
+      this.showToast('Permission Denied: Your user group cannot edit targets. Please log in as an Operator or Admin.', 'error');
+      this.openAuthModal();
+      return;
+    }
+
     const modal = document.getElementById('modal-target');
     if (!modal) return;
 
@@ -1024,20 +1051,20 @@ class NOCDashboard {
       const url = id ? `/api/monitors/${id}` : '/api/monitors';
       const method = id ? 'PUT' : 'POST';
 
-      const res = await fetch(url, {
+      const res = await this.authFetch(url, {
         method,
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
       const data = await res.json();
       if (data.success) {
         document.getElementById('modal-target').close();
         this.fetchMonitorsList();
+        this.showToast(id ? 'Target updated successfully!' : 'New target URL added successfully!', 'success');
       } else {
-        alert(`Error saving target: ${data.error}`);
+        this.showToast(`Error: ${data.error || 'Failed to save'}`, 'error');
       }
     } catch (err) {
-      alert(`Network error saving target: ${err.message}`);
+      this.showToast(`Network error: ${err.message}`, 'error');
     }
   }
 
@@ -1050,7 +1077,7 @@ class NOCDashboard {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ type: 'check_now', monitorId }));
       } else {
-        await fetch(`/api/monitors/${monitorId}/check`, { method: 'POST' });
+        await this.authFetch(`/api/monitors/${monitorId}/check`, { method: 'POST' });
       }
     } catch (err) {
       console.error('Trigger ping failed:', err);
@@ -1063,7 +1090,7 @@ class NOCDashboard {
       if (this.ws && this.ws.readyState === WebSocket.OPEN) {
         this.ws.send(JSON.stringify({ type: 'check_all' }));
       } else {
-        await fetch('/api/monitors/check-all', { method: 'POST' });
+        await this.authFetch('/api/monitors/check-all', { method: 'POST' });
       }
     } catch (err) {
       console.error('Ping all failed:', err);
@@ -1071,14 +1098,20 @@ class NOCDashboard {
   }
 
   async toggleActive(monitorId) {
+    if (!this.userPermissions.can_toggle_url) {
+      this.showToast('Permission Denied: Your user group cannot pause/resume targets.', 'error');
+      this.openAuthModal();
+      return;
+    }
     try {
-      const res = await fetch(`/api/monitors/${monitorId}/toggle`, { method: 'POST' });
+      const res = await this.authFetch(`/api/monitors/${monitorId}/toggle`, { method: 'POST' });
       const data = await res.json();
       if (data.success) {
         const idx = this.monitors.findIndex(m => m.id === monitorId);
         if (idx !== -1) {
           this.monitors[idx].is_active = data.monitor.is_active;
           this.refreshAll();
+          this.showToast(`Monitor ${data.monitor.is_active ? 'resumed' : 'paused'}`, 'info');
         }
       }
     } catch (err) {
@@ -1087,12 +1120,18 @@ class NOCDashboard {
   }
 
   async deleteMonitor(monitorId) {
+    if (!this.userPermissions.can_delete_url) {
+      this.showToast('Permission Denied: Your user group cannot delete targets (Admin required).', 'error');
+      this.openAuthModal();
+      return;
+    }
     try {
-      const res = await fetch(`/api/monitors/${monitorId}`, { method: 'DELETE' });
+      const res = await this.authFetch(`/api/monitors/${monitorId}`, { method: 'DELETE' });
       const data = await res.json();
       if (data.success) {
         this.monitors = this.monitors.filter(m => m.id !== monitorId);
         this.refreshAll();
+        this.showToast('Target monitor deleted successfully', 'success');
       }
     } catch (err) {
       console.error('Delete monitor failed:', err);
@@ -1299,6 +1338,484 @@ class NOCDashboard {
     }
 
     this.renderMonitors();
+  }
+
+  /* ========================================================================
+     Toast Notifications
+     ======================================================================== */
+  showToast(message, type = 'info') {
+    let container = document.getElementById('noc-toast-container');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'noc-toast-container';
+      container.style.cssText = `
+        position: fixed;
+        bottom: 24px;
+        right: 24px;
+        z-index: 99999;
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+        pointer-events: none;
+      `;
+      document.body.appendChild(container);
+    }
+
+    const toast = document.createElement('div');
+    const colors = {
+      info: 'background: rgba(15, 23, 42, 0.95); border-color: rgba(59, 130, 246, 0.6); color: #93c5fd;',
+      error: 'background: rgba(30, 10, 10, 0.95); border-color: rgba(239, 68, 68, 0.7); color: #fca5a5;',
+      success: 'background: rgba(6, 30, 18, 0.95); border-color: rgba(16, 185, 129, 0.7); color: #6ee7b7;'
+    };
+    const icon = type === 'error' ? '🚫' : type === 'success' ? '✅' : 'ℹ️';
+
+    toast.style.cssText = `
+      ${colors[type] || colors.info}
+      border: 1px solid;
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 12px;
+      font-weight: 500;
+      box-shadow: 0 10px 25px rgba(0,0,0,0.6);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      pointer-events: auto;
+      transition: all 0.3s ease;
+      transform: translateY(20px);
+      opacity: 0;
+    `;
+    toast.innerHTML = `<span>${icon}</span><span>${message}</span>`;
+    container.appendChild(toast);
+
+    requestAnimationFrame(() => {
+      toast.style.transform = 'translateY(0)';
+      toast.style.opacity = '1';
+    });
+
+    setTimeout(() => {
+      toast.style.transform = 'translateY(-10px)';
+      toast.style.opacity = '0';
+      setTimeout(() => toast.remove(), 300);
+    }, 4000);
+  }
+
+  /* ========================================================================
+     Authenticated Fetch Helper
+     ======================================================================== */
+  async authFetch(url, options = {}) {
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(options.headers || {})
+    };
+    if (this.token) {
+      headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    const res = await fetch(url, { ...options, headers });
+    if (res.status === 401 || res.status === 403) {
+      const data = await res.clone().json().catch(() => ({}));
+      this.showToast(data.error || 'Access Denied: Authentication or higher group permission required.', 'error');
+      if (res.status === 401) {
+        this.openAuthModal();
+      }
+    }
+    return res;
+  }
+
+  /* ========================================================================
+     RBAC & Authentication Controller
+     ======================================================================== */
+  async initAuth() {
+    if (!this.token) {
+      try {
+        const res = await fetch('/api/auth/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: 'admin', password: 'admin123' })
+        });
+        const data = await res.json();
+        if (data.success && data.token) {
+          this.token = data.token;
+          localStorage.setItem('noc_token', this.token);
+          this.currentUser = data.user;
+          this.userPermissions = data.user.permissions;
+        }
+      } catch (e) {
+        console.warn('Initial session boot:', e);
+      }
+    }
+
+    await this.checkCurrentSession();
+    this.setupAuthEventListeners();
+  }
+
+  async checkCurrentSession() {
+    try {
+      const headers = {};
+      if (this.token) headers['Authorization'] = `Bearer ${this.token}`;
+      const res = await fetch('/api/auth/me', { headers });
+      const data = await res.json();
+      if (data.success && data.user) {
+        this.currentUser = data.user;
+        this.userPermissions = data.permissions;
+      } else {
+        this.currentUser = null;
+        this.userPermissions = {
+          can_add_url: false,
+          can_edit_url: false,
+          can_delete_url: false,
+          can_toggle_url: false,
+          can_manage_users: false
+        };
+      }
+    } catch (e) {
+      console.warn('Session check failed:', e);
+    }
+    this.updateUserUI();
+  }
+
+  updateUserUI() {
+    const nameEl = document.getElementById('user-display-name');
+    const groupEl = document.getElementById('user-group-tag');
+    const roleIcon = document.getElementById('user-role-icon');
+    const rbacBtn = document.getElementById('btn-open-rbac');
+    const addBtn = document.getElementById('btn-add-monitor');
+
+    const cardAvatar = document.getElementById('auth-card-avatar');
+    const cardName = document.getElementById('auth-card-name');
+    const cardSub = document.getElementById('auth-card-sub');
+
+    if (this.currentUser) {
+      const roleIcons = { ADMIN: '🛡️', OPERATOR: '🔧', VIEWER: '👁️' };
+      const icon = roleIcons[this.currentUser.role] || '👤';
+
+      if (nameEl) nameEl.textContent = this.currentUser.displayName || this.currentUser.username;
+      if (groupEl) groupEl.textContent = `${this.currentUser.groupName} • ${this.currentUser.role}`;
+      if (roleIcon) roleIcon.textContent = icon;
+
+      if (cardAvatar) cardAvatar.textContent = icon;
+      if (cardName) cardName.textContent = this.currentUser.displayName;
+      if (cardSub) cardSub.textContent = `Group: ${this.currentUser.groupName} • Role: ${this.currentUser.role}`;
+
+      if (rbacBtn) {
+        if (this.currentUser.role === 'ADMIN' || this.userPermissions.can_manage_users) {
+          rbacBtn.classList.remove('hidden');
+        } else {
+          rbacBtn.classList.add('hidden');
+        }
+      }
+    } else {
+      if (nameEl) nameEl.textContent = 'Guest / Unauthenticated';
+      if (groupEl) groupEl.textContent = 'Read-Only Mode';
+      if (roleIcon) roleIcon.textContent = '🔒';
+      if (rbacBtn) rbacBtn.classList.add('hidden');
+
+      if (cardAvatar) cardAvatar.textContent = '🔒';
+      if (cardName) cardName.textContent = 'Not Logged In';
+      if (cardSub) cardSub.textContent = 'Operating in Guest Read-Only Mode';
+    }
+
+    if (addBtn) {
+      if (this.userPermissions.can_add_url) {
+        addBtn.classList.remove('btn-locked');
+        addBtn.title = 'Add a new website or landing page target';
+        addBtn.innerHTML = `
+          <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+          <span>+ NEW TARGET</span>
+        `;
+      } else {
+        addBtn.classList.add('btn-locked');
+        addBtn.title = 'Locked: Requires Operator or Admin permission to add targets';
+        addBtn.innerHTML = `
+          <span style="font-size: 13px;">🔒</span>
+          <span>+ NEW TARGET</span>
+        `;
+      }
+    }
+
+    this.renderPermBadges();
+  }
+
+  renderPermBadges() {
+    const list = document.getElementById('auth-perm-list');
+    if (!list) return;
+
+    const perms = [
+      { key: 'can_add_url', label: 'Add New Monitoring URLs' },
+      { key: 'can_edit_url', label: 'Edit Target URLs & Config' },
+      { key: 'can_delete_url', label: 'Delete Monitoring Targets' },
+      { key: 'can_toggle_url', label: 'Pause / Resume Targets' }
+    ];
+
+    list.innerHTML = perms.map(p => {
+      const allowed = Boolean(this.userPermissions && this.userPermissions[p.key]);
+      return `
+        <div class="perm-badge ${allowed ? 'perm-allowed' : 'perm-denied'}">
+          <span class="perm-icon">${allowed ? '✅' : '❌'}</span>
+          <span>${p.label}: <strong>${allowed ? 'ALLOWED' : 'DENIED'}</strong></span>
+        </div>
+      `;
+    }).join('');
+  }
+
+  setupAuthEventListeners() {
+    document.getElementById('btn-user-auth')?.addEventListener('click', () => this.openAuthModal());
+    document.getElementById('btn-auth-logout')?.addEventListener('click', () => this.logout());
+    document.getElementById('btn-open-rbac')?.addEventListener('click', () => this.openRbacModal());
+
+    document.querySelectorAll('.quick-login-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const u = btn.dataset.user;
+        const p = btn.dataset.pass;
+        this.login(u, p);
+      });
+    });
+
+    document.getElementById('form-auth-login')?.addEventListener('submit', (e) => {
+      e.preventDefault();
+      const u = document.getElementById('auth-username').value;
+      const p = document.getElementById('auth-password').value;
+      this.login(u, p);
+    });
+
+    document.querySelectorAll('.rbac-tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.rbac-tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        const targetPane = tab.dataset.tab;
+        document.querySelectorAll('.rbac-pane').forEach(p => p.classList.add('hidden'));
+        document.getElementById(`rbac-pane-${targetPane}`)?.classList.remove('hidden');
+
+        if (targetPane === 'groups') this.loadRbacGroups();
+        if (targetPane === 'users') this.loadRbacUsers();
+        if (targetPane === 'audit') this.loadRbacAuditLogs();
+      });
+    });
+
+    document.getElementById('btn-show-add-user')?.addEventListener('click', () => {
+      const form = document.getElementById('form-create-user');
+      form?.classList.toggle('hidden');
+    });
+
+    document.getElementById('form-create-user')?.addEventListener('submit', (e) => this.createUserSubmit(e));
+  }
+
+  async login(username, password) {
+    const errorEl = document.getElementById('auth-error-msg');
+    if (errorEl) errorEl.classList.add('hidden');
+
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password })
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.token = data.token;
+        localStorage.setItem('noc_token', this.token);
+        this.currentUser = data.user;
+        this.userPermissions = data.user.permissions;
+        this.updateUserUI();
+        this.renderMonitors();
+        this.showToast(`Logged in as ${data.user.displayName} (${data.user.groupName})`, 'success');
+        document.getElementById('modal-auth')?.close();
+      } else {
+        if (errorEl) {
+          errorEl.textContent = data.error || 'Login failed';
+          errorEl.classList.remove('hidden');
+        }
+      }
+    } catch (err) {
+      if (errorEl) {
+        errorEl.textContent = err.message;
+        errorEl.classList.remove('hidden');
+      }
+    }
+  }
+
+  async logout() {
+    try {
+      if (this.token) {
+        await fetch('/api/auth/logout', {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${this.token}` }
+        });
+      }
+    } catch (e) {}
+
+    this.token = null;
+    this.currentUser = null;
+    this.userPermissions = {
+      can_add_url: false,
+      can_edit_url: false,
+      can_delete_url: false,
+      can_toggle_url: false,
+      can_manage_users: false
+    };
+    localStorage.removeItem('noc_token');
+    this.updateUserUI();
+    this.renderMonitors();
+    this.showToast('Logged out. Operating in Guest Read-Only mode.', 'info');
+  }
+
+  openAuthModal() {
+    this.renderPermBadges();
+    const errorEl = document.getElementById('auth-error-msg');
+    if (errorEl) errorEl.classList.add('hidden');
+    document.getElementById('modal-auth')?.showModal();
+  }
+
+  async openRbacModal() {
+    document.getElementById('modal-rbac')?.showModal();
+    this.loadRbacGroups();
+  }
+
+  async loadRbacGroups() {
+    try {
+      const res = await this.authFetch('/api/auth/groups');
+      const data = await res.json();
+      if (!data.success) return;
+
+      const tbody = document.getElementById('rbac-groups-tbody');
+      if (!tbody) return;
+
+      tbody.innerHTML = data.groups.map(g => `
+        <tr>
+          <td><strong style="color: #fff;">${g.name}</strong></td>
+          <td style="color: #94a3b8; font-size: 11px;">${g.description || ''}</td>
+          <td><span class="badge-role">${g.user_count || 0} users</span></td>
+          <td style="text-align: center;">
+            <input type="checkbox" id="grp-add-${g.id}" ${g.can_add_url ? 'checked' : ''} ${g.name === 'NOC Administrators' ? 'disabled' : ''} />
+          </td>
+          <td style="text-align: center;">
+            <input type="checkbox" id="grp-edit-${g.id}" ${g.can_edit_url ? 'checked' : ''} ${g.name === 'NOC Administrators' ? 'disabled' : ''} />
+          </td>
+          <td style="text-align: center;">
+            <input type="checkbox" id="grp-del-${g.id}" ${g.can_delete_url ? 'checked' : ''} ${g.name === 'NOC Administrators' ? 'disabled' : ''} />
+          </td>
+          <td style="text-align: center;">
+            <input type="checkbox" id="grp-tog-${g.id}" ${g.can_toggle_url ? 'checked' : ''} ${g.name === 'NOC Administrators' ? 'disabled' : ''} />
+          </td>
+          <td>
+            ${g.name === 'NOC Administrators' ? '<span style="font-size: 10px; color: #64748b;">DEFAULT LOCK</span>' : `
+              <button class="btn btn-secondary btn-sm" onclick="window.app.saveGroupPermissions(${g.id}, '${g.name}')">SAVE</button>
+            `}
+          </td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      console.error('Failed to load RBAC groups:', e);
+    }
+  }
+
+  async saveGroupPermissions(groupId, groupName) {
+    const can_add_url = document.getElementById(`grp-add-${groupId}`)?.checked ? 1 : 0;
+    const can_edit_url = document.getElementById(`grp-edit-${groupId}`)?.checked ? 1 : 0;
+    const can_delete_url = document.getElementById(`grp-del-${groupId}`)?.checked ? 1 : 0;
+    const can_toggle_url = document.getElementById(`grp-tog-${groupId}`)?.checked ? 1 : 0;
+
+    try {
+      const res = await this.authFetch(`/api/auth/groups/${groupId}`, {
+        method: 'PUT',
+        body: JSON.stringify({ can_add_url, can_edit_url, can_delete_url, can_toggle_url })
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.showToast(`Updated permissions for group "${groupName}"!`, 'success');
+        await this.checkCurrentSession();
+      } else {
+        this.showToast(data.error || 'Failed to save group permissions', 'error');
+      }
+    } catch (e) {
+      this.showToast(e.message, 'error');
+    }
+  }
+
+  async loadRbacUsers() {
+    try {
+      const [resUsers, resGroups] = await Promise.all([
+        this.authFetch('/api/auth/users'),
+        this.authFetch('/api/auth/groups')
+      ]);
+      const usersData = await resUsers.json();
+      const groupsData = await resGroups.json();
+
+      const select = document.getElementById('new-user-group');
+      if (select && groupsData.groups) {
+        select.innerHTML = groupsData.groups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+      }
+
+      const tbody = document.getElementById('rbac-users-tbody');
+      if (!tbody || !usersData.users) return;
+
+      tbody.innerHTML = usersData.users.map(u => `
+        <tr>
+          <td><strong style="color: #fff; font-family: var(--font-mono);">${u.username}</strong></td>
+          <td>${u.display_name}</td>
+          <td><span class="badge-role badge-role-${(u.role || 'viewer').toLowerCase()}">${u.group_name || 'Ungrouped'}</span></td>
+          <td><span class="badge-role badge-role-${(u.role || 'viewer').toLowerCase()}">${u.role}</span></td>
+          <td>${u.role === 'ADMIN' || u.can_add_url ? '✅ Allowed' : '❌ Denied'}</td>
+          <td>${u.role === 'ADMIN' || u.can_edit_url ? '✅ Allowed' : '❌ Denied'}</td>
+          <td><span style="color: #34d399; font-size: 11px;">ACTIVE</span></td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      console.error('Failed to load users:', e);
+    }
+  }
+
+  async createUserSubmit(e) {
+    e.preventDefault();
+    const username = document.getElementById('new-user-username').value;
+    const display_name = document.getElementById('new-user-display').value;
+    const password = document.getElementById('new-user-password').value;
+    const group_id = document.getElementById('new-user-group').value;
+    const role = document.getElementById('new-user-role').value;
+
+    try {
+      const res = await this.authFetch('/api/auth/users', {
+        method: 'POST',
+        body: JSON.stringify({ username, display_name, password, group_id, role })
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.showToast(`User ${username} created successfully!`, 'success');
+        document.getElementById('form-create-user')?.reset();
+        document.getElementById('form-create-user')?.classList.add('hidden');
+        this.loadRbacUsers();
+      } else {
+        this.showToast(data.error || 'Failed to create user', 'error');
+      }
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    }
+  }
+
+  async loadRbacAuditLogs() {
+    try {
+      const res = await this.authFetch('/api/auth/audit-logs');
+      const data = await res.json();
+      if (!data.success) return;
+
+      const tbody = document.getElementById('rbac-audit-tbody');
+      if (!tbody) return;
+
+      tbody.innerHTML = data.auditLogs.map(log => `
+        <tr>
+          <td style="font-family: var(--font-mono); font-size: 10.5px; color: #94a3b8;">${log.timestamp}</td>
+          <td><strong style="color: #fff;">${log.username}</strong></td>
+          <td><span class="badge-role" style="color: #a78bfa; border: 1px solid rgba(168,85,247,0.3);">${log.action}</span></td>
+          <td style="font-size: 11.5px; color: #cbd5e1;">${log.details || ''}</td>
+          <td style="font-family: var(--font-mono); font-size: 10px; color: #64748b;">${log.ip_address || '-'}</td>
+        </tr>
+      `).join('');
+    } catch (e) {
+      console.error('Failed to load audit logs:', e);
+    }
   }
 
   /* ========================================================================

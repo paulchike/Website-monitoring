@@ -1,6 +1,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const dataDir = path.join(__dirname, '..', 'data');
 if (!fs.existsSync(dataDir)) {
@@ -73,6 +74,44 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS settings (
     key TEXT PRIMARY KEY,
     value TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS user_groups (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT UNIQUE NOT NULL,
+    description TEXT,
+    can_add_url INTEGER DEFAULT 0,
+    can_edit_url INTEGER DEFAULT 0,
+    can_delete_url INTEGER DEFAULT 0,
+    can_toggle_url INTEGER DEFAULT 0,
+    can_manage_users INTEGER DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+  );
+
+  CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    username TEXT UNIQUE NOT NULL,
+    password_hash TEXT NOT NULL,
+    salt TEXT NOT NULL,
+    display_name TEXT NOT NULL,
+    email TEXT,
+    role TEXT NOT NULL DEFAULT 'VIEWER',
+    group_id INTEGER,
+    is_active INTEGER DEFAULT 1,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    last_login DATETIME,
+    FOREIGN KEY(group_id) REFERENCES user_groups(id) ON DELETE SET NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER,
+    username TEXT,
+    action TEXT NOT NULL,
+    target_id INTEGER,
+    details TEXT,
+    ip_address TEXT,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
   );
 `);
 
@@ -176,6 +215,81 @@ const queries = {
   // Clean old heartbeats (retention management)
   purgeOldHeartbeats: db.prepare(`
     DELETE FROM heartbeats WHERE timestamp < datetime('now', '-30 days')
+  `),
+
+  // RBAC: Users
+  getUserByUsername: db.prepare(`
+    SELECT u.*, g.name as group_name, g.can_add_url, g.can_edit_url, g.can_delete_url, g.can_toggle_url, g.can_manage_users
+    FROM users u
+    LEFT JOIN user_groups g ON u.group_id = g.id
+    WHERE u.username = ?
+  `),
+  getUserById: db.prepare(`
+    SELECT u.id, u.username, u.display_name, u.email, u.role, u.group_id, u.is_active, u.created_at, u.last_login,
+           g.name as group_name, g.can_add_url, g.can_edit_url, g.can_delete_url, g.can_toggle_url, g.can_manage_users
+    FROM users u
+    LEFT JOIN user_groups g ON u.group_id = g.id
+    WHERE u.id = ?
+  `),
+  getAllUsers: db.prepare(`
+    SELECT u.id, u.username, u.display_name, u.email, u.role, u.group_id, u.is_active, u.created_at, u.last_login,
+           g.name as group_name, g.can_add_url, g.can_edit_url, g.can_delete_url, g.can_toggle_url, g.can_manage_users
+    FROM users u
+    LEFT JOIN user_groups g ON u.group_id = g.id
+    ORDER BY u.id ASC
+  `),
+  createUser: db.prepare(`
+    INSERT INTO users (username, password_hash, salt, display_name, email, role, group_id, is_active)
+    VALUES (@username, @password_hash, @salt, @display_name, @email, @role, @group_id, @is_active)
+  `),
+  updateUser: db.prepare(`
+    UPDATE users SET
+      display_name = @display_name,
+      email = @email,
+      role = @role,
+      group_id = @group_id,
+      is_active = @is_active
+    WHERE id = @id
+  `),
+  updateUserPassword: db.prepare(`
+    UPDATE users SET password_hash = ?, salt = ? WHERE id = ?
+  `),
+  updateUserLastLogin: db.prepare(`
+    UPDATE users SET last_login = CURRENT_TIMESTAMP WHERE id = ?
+  `),
+  deleteUser: db.prepare(`DELETE FROM users WHERE id = ?`),
+
+  // RBAC: User Groups
+  getAllGroups: db.prepare(`
+    SELECT g.*, (SELECT COUNT(*) FROM users u WHERE u.group_id = g.id) as user_count
+    FROM user_groups g
+    ORDER BY g.id ASC
+  `),
+  getGroupById: db.prepare(`SELECT * FROM user_groups WHERE id = ?`),
+  createGroup: db.prepare(`
+    INSERT INTO user_groups (name, description, can_add_url, can_edit_url, can_delete_url, can_toggle_url, can_manage_users)
+    VALUES (@name, @description, @can_add_url, @can_edit_url, @can_delete_url, @can_toggle_url, @can_manage_users)
+  `),
+  updateGroup: db.prepare(`
+    UPDATE user_groups SET
+      name = @name,
+      description = @description,
+      can_add_url = @can_add_url,
+      can_edit_url = @can_edit_url,
+      can_delete_url = @can_delete_url,
+      can_toggle_url = @can_toggle_url,
+      can_manage_users = @can_manage_users
+    WHERE id = @id
+  `),
+  deleteGroup: db.prepare(`DELETE FROM user_groups WHERE id = ?`),
+
+  // RBAC: Audit Logs
+  insertAuditLog: db.prepare(`
+    INSERT INTO audit_logs (user_id, username, action, target_id, details, ip_address)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `),
+  getRecentAuditLogs: db.prepare(`
+    SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?
   `)
 };
 
@@ -341,7 +455,75 @@ function seedDatabaseIfEmpty() {
   console.log('[DB] Seeding completed.');
 }
 
+// Seed default RBAC groups and initial users if empty
+function seedAuthIfEmpty() {
+  const groupCount = db.prepare('SELECT COUNT(*) as count FROM user_groups').get().count;
+  if (groupCount === 0) {
+    console.log('[DB] Seeding default RBAC user groups...');
+    db.prepare(`
+      INSERT INTO user_groups (name, description, can_add_url, can_edit_url, can_delete_url, can_toggle_url, can_manage_users)
+      VALUES 
+        ('NOC Administrators', 'Full control: Add, edit, and delete monitoring URLs, manage users and roles', 1, 1, 1, 1, 1),
+        ('Operations Engineers', 'Operations team: Can add new URLs and edit existing URLs, acknowledge incidents', 1, 1, 0, 1, 0),
+        ('Stakeholders & Viewers', 'Read-only access: View status dashboards, wallboards, and SLA metrics', 0, 0, 0, 0, 0)
+    `).run();
+  }
+
+  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+  if (userCount === 0) {
+    console.log('[DB] Seeding default RBAC users...');
+    const adminSalt = crypto.randomBytes(16).toString('hex');
+    const adminHash = crypto.scryptSync('admin123', adminSalt, 64).toString('hex');
+
+    const opSalt = crypto.randomBytes(16).toString('hex');
+    const opHash = crypto.scryptSync('operator123', opSalt, 64).toString('hex');
+
+    const viewSalt = crypto.randomBytes(16).toString('hex');
+    const viewHash = crypto.scryptSync('viewer123', viewSalt, 64).toString('hex');
+
+    const adminGroup = db.prepare(`SELECT id FROM user_groups WHERE name = 'NOC Administrators'`).get();
+    const opGroup = db.prepare(`SELECT id FROM user_groups WHERE name = 'Operations Engineers'`).get();
+    const viewGroup = db.prepare(`SELECT id FROM user_groups WHERE name = 'Stakeholders & Viewers'`).get();
+
+    queries.createUser.run({
+      username: 'admin',
+      password_hash: adminHash,
+      salt: adminSalt,
+      display_name: 'Lead NOC Administrator',
+      email: 'admin@pau.edu.ng',
+      role: 'ADMIN',
+      group_id: adminGroup ? adminGroup.id : 1,
+      is_active: 1
+    });
+
+    queries.createUser.run({
+      username: 'operator',
+      password_hash: opHash,
+      salt: opSalt,
+      display_name: 'Operations Engineer',
+      email: 'ops@pau.edu.ng',
+      role: 'OPERATOR',
+      group_id: opGroup ? opGroup.id : 2,
+      is_active: 1
+    });
+
+    queries.createUser.run({
+      username: 'viewer',
+      password_hash: viewHash,
+      salt: viewSalt,
+      display_name: 'Dashboard Viewer',
+      email: 'viewer@pau.edu.ng',
+      role: 'VIEWER',
+      group_id: viewGroup ? viewGroup.id : 3,
+      is_active: 1
+    });
+
+    console.log('[DB] RBAC seeding completed. Default users ready (admin, operator, viewer).');
+  }
+}
+
 seedDatabaseIfEmpty();
+seedAuthIfEmpty();
 
 module.exports = {
   db,
