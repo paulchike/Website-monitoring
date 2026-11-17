@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NOC Health & Landing Page Monitor</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/css/noc.css">
+</head>
+<body class="noc-theme">
+  <!-- Top Command Center Header -->
+  <header class="noc-header">
+    <div class="header-left">
+      <div class="brand-radar">
+        <span class="radar-sweep"></span>
+        <svg class="brand-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M12 2a10 10 0 0 1 10 10"></path>
+          <circle cx="12" cy="12" r="4"></circle>
+          <line x1="12" y1="12" x2="19" y2="5"></line>
+        </svg>
+      </div>
+      <div class="brand-titles">
+        <div class="brand-main">
+          <h1>NOC RADAR</h1>
+          <span class="brand-badge">HIGH-DENSITY MONITOR</span>
+        </div>
+        <p class="brand-sub">Real-Time Web Application & Landing Page Telemetry</p>
+      </div>
+    </div>
+
+    <!-- Global Health Pill -->
+    <div class="header-center">
+      <div id="global-status-pill" class="status-pill status-up">
+        <span class="pulse-dot"></span>
+        <span id="global-status-text" class="status-text">ALL SYSTEMS OPERATIONAL</span>
+      </div>
+      <div class="clock-display" title="Network Operations Center UTC Clock">
+        <span class="clock-label">UTC</span>
+        <span id="utc-clock" class="clock-time">00:00:00</span>
+      </div>
+    </div>
+
+    <!-- Header Actions -->
+    <div class="header-right">
+      <div id="ws-indicator" class="ws-badge ws-connected" title="WebSocket Stream Status">
+        <span class="ws-dot"></span>
+        <span class="ws-label">LIVE STREAM</span>
+      </div>
+
+      <button id="btn-sound-toggle" class="btn btn-icon" title="Toggle NOC Audio Alerts (Incident Sirens & Recovery Chimes)">
+        <svg id="icon-sound-on" class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+        </svg>
+        <svg id="icon-sound-off" class="icon hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+          <line x1="23" y1="9" x2="17" y2="15"></line>
+          <line x1="17" y1="9" x2="23" y2="15"></line>
+        </svg>
+        <span id="sound-label" class="btn-text">ALERT SOUNDS</span>
+      </button>
+
+      <button id="btn-check-all" class="btn btn-secondary" title="Execute immediate check on all targets">
+        <svg class="icon spin-on-click" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="23 4 23 10 17 10"></polyline>
+          <polyline points="1 20 1 14 7 14"></polyline>
+          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+        </svg>
+        <span>PING ALL</span>
+      </button>
+
+      <button id="btn-open-reports" class="btn btn-secondary" title="View & Export SLA Uptime and Latency Reports">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="18" y1="20" x2="18" y2="10"></line>
+          <line x1="12" y1="20" x2="12" y2="4"></line>
+          <line x1="6" y1="20" x2="6" y2="14"></line>
+        </svg>
+        <span>REPORTS</span>
+      </button>
+
+      <button id="btn-add-monitor" class="btn btn-primary" title="Add a new website or landing page target">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="12" y1="5" x2="12" y2="19"></line>
+          <line x1="5" y1="12" x2="19" y2="12"></line>
+        </svg>
+        <span>+ NEW TARGET</span>
+      </button>
+    </div>
+  </header>
+
+  <!-- Incident Critical Alert Bar (Dynamically visible when outage occurs) -->
+  <div id="incident-banner" class="incident-alert-banner hidden">
+    <div class="incident-pulse-beacon"></div>
+    <div class="incident-content">
+      <div class="incident-icon-wrap">
+        <svg class="icon warning-siren" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+          <line x1="12" y1="9" x2="12" y2="13"></line>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+      </div>
+      <div class="incident-text">
+        <strong id="incident-banner-title">CRITICAL INCIDENT DETECTED</strong>
+        <span id="incident-banner-desc">Target service down. Investigation required.</span>
+      </div>
+    </div>
+    <div class="incident-actions">
+      <button id="btn-ack-incident" class="btn btn-danger btn-sm">ACKNOWLEDGE ALARM</button>
+    </div>
+  </div>
+
+  <!-- High-Density NOC KPI Metrics Strip -->
+  <section class="noc-kpi-strip">
+    <div class="kpi-card kpi-health">
+      <div class="kpi-label">OVERALL HEALTH</div>
+      <div class="kpi-val-row">
+        <span id="kpi-health-score" class="kpi-value text-emerald">100%</span>
+        <span class="kpi-tag">30-DAY SLA</span>
+      </div>
+      <div class="kpi-bar-bg"><div id="kpi-health-bar" class="kpi-bar-fill bg-emerald" style="width: 100%;"></div></div>
+    </div>
+
+    <div class="kpi-card">
+      <div class="kpi-label">TOTAL MONITORS</div>
+      <div class="kpi-val-row">
+        <span id="kpi-total" class="kpi-value">0</span>
+        <span class="kpi-sub"><span id="kpi-paused">0</span> paused</span>
+      </div>
+      <div class="kpi-meta">Configured Endpoints</div>
+    </div>
+
+    <div class="kpi-card kpi-up">
+      <div class="kpi-label">OPERATIONAL</div>
+      <div class="kpi-val-row">
+        <span id="kpi-up" class="kpi-value text-emerald">0</span>
+        <span class="kpi-badge badge-up">HEALTHY</span>
+      </div>
+      <div class="kpi-meta">Passing All Probes</div>
+    </div>
+
+    <div class="kpi-card kpi-degraded">
+      <div class="kpi-label">DEGRADED</div>
+      <div class="kpi-val-row">
+        <span id="kpi-degraded" class="kpi-value text-amber">0</span>
+        <span class="kpi-badge badge-degraded">HIGH LATENCY / SSL</span>
+      </div>
+      <div class="kpi-meta">Slow or SSL Warning</div>
+    </div>
+
+    <div class="kpi-card kpi-down">
+      <div class="kpi-label">CRITICAL (DOWN)</div>
+      <div class="kpi-val-row">
+        <span id="kpi-down" class="kpi-value text-rose">0</span>
+        <span id="kpi-incidents-badge" class="kpi-badge badge-down">0 INCIDENTS</span>
+      </div>
+      <div class="kpi-meta">Outage / Unreachable</div>
+    </div>
+
+    <div class="kpi-card kpi-latency">
+      <div class="kpi-label">AVERAGE LATENCY</div>
+      <div class="kpi-val-row">
+        <span id="kpi-avg-latency" class="kpi-value text-cyan">-- ms</span>
+        <span class="kpi-tag">GLOBAL TTFB</span>
+      </div>
+      <div class="kpi-meta">Across All Active Targets</div>
+    </div>
+  </section>
+
+  <!-- Filter & View Control Toolbar -->
+  <section class="noc-toolbar">
+    <!-- Search Bar -->
+    <div class="search-box">
+      <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <circle cx="11" cy="11" r="8"></circle>
+        <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+      </svg>
+      <input type="text" id="search-input" placeholder="Search target name, domain, URL, or keyword... [/]" autocomplete="off" />
+      <span class="kbd-shortcut">/</span>
+    </div>
+
+    <!-- Status Filter Pills -->
+    <div class="filter-pills" role="tablist">
+      <button class="filter-pill active" data-filter="all">ALL (<span id="count-all">0</span>)</button>
+      <button class="filter-pill filter-pill-up" data-filter="up">UP (<span id="count-up">0</span>)</button>
+      <button class="filter-pill filter-pill-degraded" data-filter="degraded">DEGRADED (<span id="count-degraded">0</span>)</button>
+      <button class="filter-pill filter-pill-down" data-filter="down">DOWN (<span id="count-down">0</span>)</button>
+      <button class="filter-pill filter-pill-paused" data-filter="paused">PAUSED (<span id="count-paused">0</span>)</button>
+    </div>
+
+    <!-- Group Filter Dropdown -->
+    <div class="group-select-wrap">
+      <label for="group-filter" class="select-label">GROUP:</label>
+      <select id="group-filter" class="noc-select">
+        <option value="ALL">All Groups</option>
+        <option value="Production">Production</option>
+        <option value="Landing Pages">Landing Pages</option>
+        <option value="Core Network">Core Network</option>
+        <option value="APIs & Services">APIs & Services</option>
+        <option value="Infrastructure">Infrastructure</option>
+        <option value="Staging & QA">Staging & QA</option>
+      </select>
+    </div>
+
+    <!-- Layout Switcher (Grid / Wallboard / Table) -->
+    <div class="view-switcher" role="radiogroup">
+      <button id="view-cards-btn" class="view-btn active" title="Detailed Card Grid">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="7" height="7"></rect>
+          <rect x="14" y="3" width="7" height="7"></rect>
+          <rect x="14" y="14" width="7" height="7"></rect>
+          <rect x="3" y="14" width="7" height="7"></rect>
+        </svg>
+        <span>CARDS</span>
+      </button>
+      <button id="view-matrix-btn" class="view-btn" title="High-Density NOC Wallboard Matrix">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="2" y="2" width="4" height="4"></rect>
+          <rect x="8" y="2" width="4" height="4"></rect>
+          <rect x="14" y="2" width="4" height="4"></rect>
+          <rect x="20" y="2" width="4" height="4"></rect>
+          <rect x="2" y="8" width="4" height="4"></rect>
+          <rect x="8" y="8" width="4" height="4"></rect>
+          <rect x="14" y="8" width="4" height="4"></rect>
+          <rect x="20" y="8" width="4" height="4"></rect>
+          <rect x="2" y="14" width="4" height="4"></rect>
+          <rect x="8" y="14" width="4" height="4"></rect>
+          <rect x="14" y="14" width="4" height="4"></rect>
+          <rect x="20" y="14" width="4" height="4"></rect>
+        </svg>
+        <span>WALLBOARD</span>
+      </button>
+      <button id="view-table-btn" class="view-btn" title="Dense Telemetry Table">
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="8" y1="6" x2="21" y2="6"></line>
+          <line x1="8" y1="12" x2="21" y2="12"></line>
+          <line x1="8" y1="18" x2="21" y2="18"></line>
+          <line x1="3" y1="6" x2="3.01" y2="6"></line>
+          <line x1="3" y1="12" x2="3.01" y2="12"></line>
+          <line x1="3" y1="18" x2="3.01" y2="18"></line>
+        </svg>
+        <span>TABLE</span>
+      </button>
+    </div>
+  </section>
+
+  <!-- Main Monitor Displays Container -->
+  <main class="noc-main-content">
+    <!-- View 1: Card Grid -->
+    <div id="monitors-cards-grid" class="monitors-grid"></div>
+
+    <!-- View 2: Wallboard Matrix -->
+    <div id="monitors-matrix-view" class="monitors-matrix hidden"></div>
+
+    <!-- View 3: Dense Telemetry Table -->
+    <div id="monitors-table-view" class="monitors-table-container hidden">
+      <table class="noc-table">
+        <thead>
+          <tr>
+            <th style="width: 110px;">STATUS</th>
+            <th>TARGET NAME & URL</th>
+            <th style="width: 140px;">GROUP</th>
+            <th style="width: 110px;">LATENCY</th>
+            <th style="width: 120px;">SSL CERT</th>
+            <th style="width: 110px;">24H UPTIME</th>
+            <th style="width: 180px;">CHECK HISTORY</th>
+            <th style="width: 140px; text-align: right;">ACTIONS</th>
+          </tr>
+        </thead>
+        <tbody id="monitors-table-body"></tbody>
+      </table>
+    </div>
+
+    <!-- Empty State -->
+    <div id="empty-state" class="empty-state hidden">
+      <div class="empty-radar"></div>
+      <h3>No Monitoring Targets Found</h3>
+      <p>No endpoints match your current search or status filter.</p>
+      <button class="btn btn-primary" onclick="window.app.resetFilters()">Clear Filters</button>
+    </div>
+  </main>
+
+  <!-- Bottom NOC Telemetry Stream Drawer / Bar -->
+  <footer class="noc-stream-bar">
+    <div class="stream-header" id="btn-toggle-stream">
+      <div class="stream-title">
+        <span class="live-pulse"></span>
+        <span>REAL-TIME NOC EVENT STREAM</span>
+        <span id="stream-count-badge" class="stream-badge">LIVE</span>
+      </div>
+      <div class="stream-meta">
+        <span id="stream-latest-event">Listening for telemetry heartbeats...</span>
+        <svg class="chevron-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="18 15 12 9 6 15"></polyline>
+        </svg>
+      </div>
+    </div>
+    <div id="stream-logs" class="stream-logs-drawer hidden">
+      <div id="stream-logs-list" class="stream-logs-list"></div>
+    </div>
+  </footer>
+
+  <!-- ======================================================== -->
+  <!-- MODALS (Native HTML5 <dialog> elements)                  -->
+  <!-- ======================================================== -->
+
+  <!-- Modal 1: Add / Edit Target Modal -->
+  <dialog id="modal-target" class="noc-dialog">
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <div class="dialog-title-wrap">
+          <span class="dialog-badge">CONFIG</span>
+          <h2 id="modal-target-title">Add New Target Endpoint</h2>
+        </div>
+        <button class="btn-close-dialog" onclick="document.getElementById('modal-target').close()">✕</button>
+      </div>
+
+      <form id="form-target" class="dialog-form" method="dialog">
+        <input type="hidden" id="form-monitor-id" value="">
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label for="form-name">Target Name *</label>
+            <input type="text" id="form-name" required placeholder="e.g. Production Landing Page" />
+          </div>
+          <div class="form-group flex-1">
+            <label for="form-group">Group / Tier</label>
+            <input type="text" id="form-group" list="group-suggestions" placeholder="Landing Pages" />
+            <datalist id="group-suggestions">
+              <option value="Landing Pages">
+              <option value="Production">
+              <option value="Core Network">
+              <option value="APIs & Services">
+              <option value="Infrastructure">
+              <option value="Staging & QA">
+            </datalist>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-3">
+            <label for="form-url">Endpoint URL *</label>
+            <input type="url" id="form-url" required placeholder="https://example.com/health" />
+          </div>
+          <div class="form-group flex-1">
+            <label for="form-method">HTTP Method</label>
+            <select id="form-method" class="noc-select">
+              <option value="GET">GET</option>
+              <option value="HEAD">HEAD</option>
+              <option value="POST">POST</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-1">
+            <label for="form-interval">Check Interval</label>
+            <select id="form-interval" class="noc-select">
+              <option value="10">Every 10 seconds (High Precision)</option>
+              <option value="15">Every 15 seconds</option>
+              <option value="30" selected>Every 30 seconds (Default)</option>
+              <option value="60">Every 60 seconds</option>
+              <option value="300">Every 5 minutes</option>
+            </select>
+          </div>
+          <div class="form-group flex-1">
+            <label for="form-timeout">Timeout (ms)</label>
+            <input type="number" id="form-timeout" value="10000" min="1000" max="60000" step="1000" />
+          </div>
+          <div class="form-group flex-1">
+            <label for="form-expected-status">Expected Status</label>
+            <input type="number" id="form-expected-status" value="200" min="100" max="599" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group flex-2">
+            <label for="form-keyword">Content / Keyword Assertion (Optional)</label>
+            <input type="text" id="form-keyword" placeholder="Verify string exists in body (e.g. 'Welcome')" />
+          </div>
+          <div class="form-group flex-1 flex-center">
+            <label class="checkbox-label" for="form-ssl-check">
+              <input type="checkbox" id="form-ssl-check" checked />
+              <span>Enable SSL Expiry & Validity Check</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-row" style="background: rgba(59, 130, 246, 0.08); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: var(--radius-sm); padding: 10px;">
+          <div class="form-group flex-1">
+            <label for="form-headers" style="color: #93c5fd; font-weight: 700; display: flex; align-items: center; gap: 6px;">
+              <span>🛡️ Custom Headers & Cloudflare Bypass Token (Optional)</span>
+            </label>
+            <input type="text" id="form-headers" placeholder="e.g. X-NOC-Probe-Token: PauNocMonitorSecure2026" style="background: #060b17; border-color: rgba(59, 130, 246, 0.5); color: #fff;" />
+            <span style="font-size: 11px; color: #94a3b8; margin-top: 3px;">
+              Enter your Cloudflare WAF bypass header here (e.g. <code>X-NOC-Probe-Token: your-secret-token</code>) or JSON format.
+            </span>
+          </div>
+        </div>
+
+        <div class="dialog-footer">
+          <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-target').close()">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="btn-save-target">Save & Start Monitoring</button>
+        </div>
+      </form>
+    </div>
+  </dialog>
+
+  <!-- Modal 2: Deep-Dive Telemetry Inspector Modal -->
+  <dialog id="modal-details" class="noc-dialog dialog-large">
+    <div class="dialog-box">
+      <div class="dialog-header">
+        <div class="dialog-title-wrap">
+          <span id="detail-status-pill" class="status-pill status-up">UP</span>
+          <h2 id="detail-title">Target Telemetry Inspection</h2>
+          <span id="detail-url" class="detail-url-badge"></span>
+        </div>
+        <div class="dialog-header-actions">
+          <button id="detail-ping-now-btn" class="btn btn-secondary btn-sm">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="23 4 23 10 17 10"></polyline>
+              <polyline points="1 20 1 14 7 14"></polyline>
+              <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+            </svg>
+            PING NOW
+          </button>
+          <button class="btn-close-dialog" onclick="document.getElementById('modal-details').close()">✕</button>
+        </div>
+      </div>
+
+      <div class="dialog-body">
+        <!-- Top Stats Row -->
+        <div class="detail-kpi-row">
+          <div class="detail-kpi-item">
+            <span class="detail-kpi-label">Current Latency</span>
+            <span id="detail-curr-latency" class="detail-kpi-val text-cyan">-- ms</span>
+          </div>
+          <div class="detail-kpi-item">
+            <span class="detail-kpi-label">24h Uptime</span>
+            <span id="detail-uptime-24h" class="detail-kpi-val text-emerald">100%</span>
+          </div>
+          <div class="detail-kpi-item">
+            <span class="detail-kpi-label">7-Day Uptime</span>
+            <span id="detail-uptime-7d" class="detail-kpi-val text-emerald">100%</span>
+          </div>
+          <div class="detail-kpi-item">
+            <span class="detail-kpi-label">30-Day SLA</span>
+            <span id="detail-uptime-30d" class="detail-kpi-val text-emerald">100%</span>
+          </div>
+          <div class="detail-kpi-item">
+            <span class="detail-kpi-label">SSL Expiry</span>
+            <span id="detail-ssl-info" class="detail-kpi-val">--</span>
+          </div>
+        </div>
+
+        <!-- Latency Timeline Canvas Chart -->
+        <div class="detail-section">
+          <div class="section-title-row">
+            <h3>Latency Timeline (Last 60 Probes)</h3>
+            <div class="chart-stats-summary" id="detail-chart-summary"></div>
+          </div>
+          <div class="chart-container">
+            <canvas id="detail-latency-chart" width="800" height="200"></canvas>
+          </div>
+        </div>
+
+        <!-- Network Timing Breakdown -->
+        <div class="detail-section">
+          <div class="section-title-row">
+            <h3>Network Phase Breakdown (Latest Probe)</h3>
+          </div>
+          <div class="timing-breakdown-bar">
+            <div id="timing-dns" class="timing-segment timing-dns" title="DNS Lookup">DNS: 0ms</div>
+            <div id="timing-tcp" class="timing-segment timing-tcp" title="TCP Connect">TCP: 0ms</div>
+            <div id="timing-tls" class="timing-segment timing-tls" title="TLS Handshake">TLS: 0ms</div>
+            <div id="timing-ttfb" class="timing-segment timing-ttfb" title="TTFB">TTFB: 0ms</div>
+          </div>
+          <div class="timing-legend">
+            <span><span class="legend-dot bg-dns"></span> DNS Lookup</span>
+            <span><span class="legend-dot bg-tcp"></span> TCP Connection</span>
+            <span><span class="legend-dot bg-tls"></span> TLS Handshake</span>
+            <span><span class="legend-dot bg-ttfb"></span> Time To First Byte</span>
+          </div>
+        </div>
+
+        <!-- Recent Probes History Log Table -->
+        <div class="detail-section">
+          <div class="section-title-row">
+            <h3>Recent Probe Telemetry Records</h3>
+          </div>
+          <div class="detail-table-wrap">
+            <table class="noc-table noc-table-compact">
+              <thead>
+                <tr>
+                  <th>TIME</th>
+                  <th>STATUS</th>
+                  <th>HTTP CODE</th>
+                  <th>LATENCY</th>
+                  <th>SSL STATUS</th>
+                  <th>DETAILS / ERROR</th>
+                </tr>
+              </thead>
+              <tbody id="detail-probes-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="dialog-footer">
+        <div class="detail-footer-left">
+          <button id="detail-btn-toggle" class="btn btn-secondary">Pause Monitoring</button>
+          <button id="detail-btn-edit" class="btn btn-secondary">Edit Settings</button>
+          <button id="detail-btn-delete" class="btn btn-danger">Delete Target</button>
+        </div>
+        <button type="button" class="btn btn-primary" onclick="document.getElementById('modal-details').close()">Close</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Modal 3: SLA & Telemetry Reports Modal with CSV/JSON/Print Export -->
+  <dialog id="modal-report" class="noc-dialog dialog-large">
+    <div class="dialog-box dialog-report-box">
+      <div class="dialog-header">
+        <div class="dialog-title-wrap">
+          <span class="dialog-badge" style="background: rgba(16, 185, 129, 0.2); border-color: rgba(16, 185, 129, 0.4); color: var(--color-up);">REPORTS</span>
+          <h2>SLA & Telemetry Performance Reports</h2>
+        </div>
+        <button class="btn-close-dialog" onclick="document.getElementById('modal-report').close()">✕</button>
+      </div>
+
+      <!-- Report Filter and Export Toolbar -->
+      <div class="report-toolbar">
+        <div class="report-filters">
+          <div class="report-filter-item">
+            <label for="report-monitor-select">TARGET URL:</label>
+            <select id="report-monitor-select" class="noc-select">
+              <option value="all">All Targets (Executive Overview)</option>
+            </select>
+          </div>
+
+          <div class="report-filter-item">
+            <label for="report-range-select">TIMEFRAME:</label>
+            <select id="report-range-select" class="noc-select">
+              <option value="24h" selected>Last 24 Hours</option>
+              <option value="7d">Last 7 Days</option>
+              <option value="30d">Last 30 Days</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="report-export-actions">
+          <button id="btn-export-csv" class="btn btn-primary btn-sm" title="Download spreadsheet CSV">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span>EXPORT CSV</span>
+          </button>
+          <button id="btn-export-json" class="btn btn-secondary btn-sm" title="Download raw JSON data">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+              <polyline points="14 2 14 8 20 8"></polyline>
+            </svg>
+            <span>JSON</span>
+          </button>
+          <button id="btn-print-report" class="btn btn-secondary btn-sm" title="Print executive summary or save as PDF">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="6 9 6 2 18 2 18 9"></polyline>
+              <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path>
+              <rect x="6" y="14" width="12" height="8"></rect>
+            </svg>
+            <span>PRINT / PDF</span>
+          </button>
+        </div>
+      </div>
+
+      <!-- Printable & Scrollable Report Content -->
+      <div id="printable-report-content" class="dialog-body report-body">
+        <!-- Executive KPI Banner -->
+        <div class="detail-kpi-row report-kpi-row">
+          <div class="detail-kpi-item">
+            <span class="detail-kpi-label">Average SLA Uptime</span>
+            <span id="rep-kpi-uptime" class="detail-kpi-val text-emerald">100%</span>
+            <span class="detail-kpi-sub" id="rep-kpi-range-label">Last 24 Hours</span>
+          </div>
+          <div class="detail-kpi-item">
+            <span class="detail-kpi-label">Average Latency</span>
+            <span id="rep-kpi-latency" class="detail-kpi-val text-cyan">-- ms</span>
+            <span class="detail-kpi-sub">Network TTFB</span>
+          </div>
+          <div class="detail-kpi-item">
+            <span class="detail-kpi-label">Total Health Probes</span>
+            <span id="rep-kpi-probes" class="detail-kpi-val">0</span>
+            <span class="detail-kpi-sub">Recorded In Period</span>
+          </div>
+          <div class="detail-kpi-item">
+            <span class="detail-kpi-label">Recorded Outages</span>
+            <span id="rep-kpi-incidents" class="detail-kpi-val">0</span>
+            <span class="detail-kpi-sub">Total Incidents</span>
+          </div>
+          <div class="detail-kpi-item">
+            <span class="detail-kpi-label">Total Downtime</span>
+            <span id="rep-kpi-downtime" class="detail-kpi-val">0 min</span>
+            <span class="detail-kpi-sub">Cumulative</span>
+          </div>
+        </div>
+
+        <!-- Telemetry Table for Evaluated Monitors -->
+        <div class="detail-section">
+          <div class="section-title-row">
+            <h3 id="rep-table-title">Performance Metrics by URL</h3>
+            <span id="rep-generated-at" class="chart-stats-summary"></span>
+          </div>
+          <div class="detail-table-wrap">
+            <table class="noc-table noc-table-compact">
+              <thead>
+                <tr>
+                  <th>STATUS</th>
+                  <th>TARGET NAME & URL</th>
+                  <th>GROUP</th>
+                  <th>PROBES</th>
+                  <th>UPTIME SLA %</th>
+                  <th>AVG LATENCY</th>
+                  <th>MIN / MAX</th>
+                  <th>SSL EXPIRY</th>
+                  <th>INCIDENTS</th>
+                </tr>
+              </thead>
+              <tbody id="rep-monitors-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Incident History Log in Timeframe -->
+        <div class="detail-section">
+          <div class="section-title-row">
+            <h3>Incident & Outage History in Period</h3>
+            <span id="rep-incidents-count-label" class="chart-stats-summary"></span>
+          </div>
+          <div class="detail-table-wrap">
+            <table class="noc-table noc-table-compact">
+              <thead>
+                <tr>
+                  <th>STARTED</th>
+                  <th>TARGET NAME</th>
+                  <th>DURATION</th>
+                  <th>ROOT CAUSE</th>
+                  <th>STATUS</th>
+                </tr>
+              </thead>
+              <tbody id="rep-incidents-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="dialog-footer">
+        <button type="button" class="btn btn-secondary" onclick="document.getElementById('modal-report').close()">Close</button>
+      </div>
+    </div>
+  </dialog>
+
+  <!-- Scripts -->
+  <script src="/js/charts.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
+
