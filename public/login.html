@@ -1,0 +1,579 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>NOC Radar // Staff Authentication Gateway</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="stylesheet" href="/css/noc.css">
+  <style>
+    body.login-page {
+      background: radial-gradient(circle at 50% 20%, #0d1a36 0%, #060b17 60%, #030712 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding: 20px;
+      font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif);
+      color: #f8fafc;
+      overflow-x: hidden;
+      position: relative;
+    }
+
+    /* Ambient Background Grid */
+    body.login-page::before {
+      content: "";
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background-image: 
+        linear-gradient(rgba(59, 130, 246, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(59, 130, 246, 0.04) 1px, transparent 1px);
+      background-size: 32px 32px;
+      pointer-events: none;
+    }
+
+    .login-container {
+      width: 100%;
+      max-width: 460px;
+      position: relative;
+      z-index: 2;
+    }
+
+    .login-brand-header {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+
+    .login-brand-icon {
+      width: 52px;
+      height: 52px;
+      background: rgba(59, 130, 246, 0.1);
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      border-radius: 12px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 12px;
+      box-shadow: 0 0 25px rgba(59, 130, 246, 0.2);
+    }
+
+    .login-brand-icon svg {
+      width: 28px;
+      height: 28px;
+      color: #38bdf8;
+    }
+
+    .login-title {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: 0.5px;
+      color: #fff;
+      margin: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .login-sub {
+      font-size: 12.5px;
+      color: #94a3b8;
+      margin-top: 6px;
+    }
+
+    /* Glassmorphism Card */
+    .login-card {
+      background: rgba(15, 23, 42, 0.75);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      border-radius: 12px;
+      padding: 28px;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 0 1px rgba(255, 255, 255, 0.05);
+    }
+
+    /* Portal Badge */
+    .portal-badge-wrap {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 20px;
+      padding-bottom: 14px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+    }
+
+    .portal-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      text-transform: uppercase;
+      font-family: var(--font-mono, monospace);
+    }
+
+    .badge-admin-portal {
+      background: rgba(168, 85, 247, 0.15);
+      border: 1px solid rgba(168, 85, 247, 0.4);
+      color: #c084fc;
+    }
+
+    .badge-operator-portal {
+      background: rgba(14, 165, 233, 0.15);
+      border: 1px solid rgba(14, 165, 233, 0.4);
+      color: #38bdf8;
+    }
+
+    .badge-general-portal {
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.4);
+      color: #93c5fd;
+    }
+
+    /* Role Selector Tabs */
+    .role-tabs {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 6px;
+      background: rgba(3, 7, 18, 0.6);
+      padding: 4px;
+      border-radius: 8px;
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      margin-bottom: 20px;
+    }
+
+    .role-tab-btn {
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      padding: 8px 12px;
+      border-radius: 6px;
+      font-size: 12px;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      transition: all 0.2s ease;
+    }
+
+    .role-tab-btn.active {
+      background: rgba(30, 41, 59, 0.9);
+      color: #fff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+    }
+
+    .role-tab-btn.active.admin-active {
+      background: rgba(147, 51, 234, 0.25);
+      color: #d8b4fe;
+      border: 1px solid rgba(168, 85, 247, 0.4);
+    }
+
+    .role-tab-btn.active.operator-active {
+      background: rgba(2, 132, 199, 0.25);
+      color: #7dd3fc;
+      border: 1px solid rgba(56, 189, 248, 0.4);
+    }
+
+    /* Form Fields */
+    .login-form-group {
+      margin-bottom: 16px;
+    }
+
+    .login-form-group label {
+      display: block;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #cbd5e1;
+      margin-bottom: 6px;
+    }
+
+    .login-input-wrap {
+      position: relative;
+    }
+
+    .login-input {
+      width: 100%;
+      background: #060b17;
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 6px;
+      padding: 10px 14px;
+      font-size: 13.5px;
+      color: #fff;
+      outline: none;
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    .login-input:focus {
+      border-color: #38bdf8;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+    }
+
+    .toggle-pass-btn {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      background: none;
+      border: none;
+      color: #64748b;
+      cursor: pointer;
+      padding: 4px;
+    }
+
+    .toggle-pass-btn:hover {
+      color: #cbd5e1;
+    }
+
+    /* Quick Credential Pills */
+    .quick-creds-box {
+      margin-top: 14px;
+      margin-bottom: 18px;
+      padding: 10px;
+      background: rgba(3, 7, 18, 0.5);
+      border: 1px dashed rgba(255, 255, 255, 0.12);
+      border-radius: 6px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .quick-creds-label {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+
+    .quick-creds-btn {
+      background: rgba(59, 130, 246, 0.15);
+      border: 1px solid rgba(59, 130, 246, 0.3);
+      color: #93c5fd;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 10.5px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .quick-creds-btn:hover {
+      background: rgba(59, 130, 246, 0.3);
+      color: #fff;
+    }
+
+    /* Submit Button */
+    .btn-submit-login {
+      width: 100%;
+      padding: 12px;
+      border-radius: 6px;
+      font-size: 13.5px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+      border: none;
+      cursor: pointer;
+      background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%);
+      color: #fff;
+      box-shadow: 0 4px 14px rgba(37, 99, 235, 0.4);
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .btn-submit-login:hover {
+      background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+      box-shadow: 0 6px 20px rgba(37, 99, 235, 0.6);
+      transform: translateY(-1px);
+    }
+
+    .btn-submit-login:active {
+      transform: translateY(0);
+    }
+
+    /* Alerts */
+    .login-alert {
+      padding: 10px 14px;
+      border-radius: 6px;
+      font-size: 12px;
+      margin-bottom: 16px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .login-alert-error {
+      background: rgba(239, 68, 68, 0.12);
+      border: 1px solid rgba(239, 68, 68, 0.3);
+      color: #fca5a5;
+    }
+
+    .login-alert-success {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.3);
+      color: #6ee7b7;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    /* Return link */
+    .return-link-wrap {
+      text-align: center;
+      margin-top: 20px;
+    }
+
+    .return-link {
+      font-size: 12px;
+      color: #64748b;
+      text-decoration: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      transition: color 0.2s;
+    }
+
+    .return-link:hover {
+      color: #94a3b8;
+    }
+
+    .security-notice {
+      margin-top: 24px;
+      font-size: 10.5px;
+      font-family: var(--font-mono, monospace);
+      color: #475569;
+      text-align: center;
+      letter-spacing: 0.3px;
+    }
+  </style>
+</head>
+<body class="login-page">
+
+  <div class="login-container">
+    <!-- Brand Header -->
+    <div class="login-brand-header">
+      <div class="login-brand-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <circle cx="12" cy="12" r="10"></circle>
+          <path d="M12 2a10 10 0 0 1 10 10"></path>
+          <circle cx="12" cy="12" r="4"></circle>
+          <line x1="12" y1="12" x2="19" y2="5"></line>
+        </svg>
+      </div>
+      <h1 class="login-title">NOC RADAR</h1>
+      <p class="login-sub" id="portal-sub-desc">Authentication Gateway & Access Control</p>
+    </div>
+
+    <!-- Login Card -->
+    <div class="login-card">
+      <!-- Portal Status Badge -->
+      <div class="portal-badge-wrap">
+        <span id="portal-badge" class="portal-badge badge-admin-portal">
+          <span id="portal-badge-icon">🛡️</span>
+          <span id="portal-badge-text">ADMIN GATEWAY</span>
+        </span>
+        <span style="font-size: 10.5px; font-family: var(--font-mono, monospace); color: #64748b;">RBAC v2.4</span>
+      </div>
+
+      <!-- Role Selector Tabs -->
+      <div class="role-tabs" id="role-tabs-wrap">
+        <button type="button" class="role-tab-btn active admin-active" id="tab-admin" data-role="ADMIN">
+          <span>🛡️</span>
+          <span>Administrator</span>
+        </button>
+        <button type="button" class="role-tab-btn" id="tab-operator" data-role="OPERATOR">
+          <span>🔧</span>
+          <span>Operator</span>
+        </button>
+      </div>
+
+      <!-- Feedback Alert -->
+      <div id="login-alert" class="login-alert login-alert-error hidden"></div>
+
+      <!-- Login Form -->
+      <form id="login-form">
+        <div class="login-form-group">
+          <label for="username">Username</label>
+          <div class="login-input-wrap">
+            <input type="text" id="username" class="login-input" required autocomplete="username" autofocus />
+          </div>
+        </div>
+
+        <div class="login-form-group">
+          <label for="password">Password</label>
+          <div class="login-input-wrap">
+            <input type="password" id="password" class="login-input" required autocomplete="current-password" />
+            <button type="button" class="toggle-pass-btn" id="btn-toggle-password" title="Toggle password visibility">
+              <svg style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
+                <circle cx="12" cy="12" r="3"></circle>
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        <!-- Quick Credential Auto-Filler -->
+        <div class="quick-creds-box">
+          <span class="quick-creds-label" id="quick-creds-hint">Fill default Admin credentials</span>
+          <button type="button" class="quick-creds-btn" id="btn-fill-creds">Auto-Fill</button>
+        </div>
+
+        <button type="submit" class="btn-submit-login" id="btn-submit">
+          <span id="btn-text">Authenticate Session</span>
+          <span id="btn-spinner" class="hidden">...</span>
+        </button>
+      </form>
+    </div>
+
+    <!-- Return Link -->
+    <div class="return-link-wrap">
+      <a href="/" class="return-link">
+        <svg style="width:14px;height:14px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <line x1="19" y1="12" x2="5" y2="12"></line>
+          <polyline points="12 19 5 12 12 5"></polyline>
+        </svg>
+        <span>Return to Live NOC Wallboard</span>
+      </a>
+    </div>
+
+    <!-- Security Footnote -->
+    <div class="security-notice">
+      HMAC-SHA256 SIGNED • SCRYPT HASHED • IP AUDIT LOGGED
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      const path = window.location.pathname.toLowerCase();
+      const isAdminRoute = path.includes('/admin');
+      const isOperatorRoute = path.includes('/operator');
+
+      let currentRole = isOperatorRoute ? 'OPERATOR' : 'ADMIN';
+
+      const tabAdmin = document.getElementById('tab-admin');
+      const tabOperator = document.getElementById('tab-operator');
+      const portalBadge = document.getElementById('portal-badge');
+      const portalBadgeIcon = document.getElementById('portal-badge-icon');
+      const portalBadgeText = document.getElementById('portal-badge-text');
+      const portalSubDesc = document.getElementById('portal-sub-desc');
+
+      const usernameInput = document.getElementById('username');
+      const passwordInput = document.getElementById('password');
+      const quickCredsHint = document.getElementById('quick-creds-hint');
+      const btnFillCreds = document.getElementById('btn-fill-creds');
+      const loginForm = document.getElementById('login-form');
+      const loginAlert = document.getElementById('login-alert');
+      const btnSubmit = document.getElementById('btn-submit');
+      const btnText = document.getElementById('btn-text');
+
+      function setRole(role) {
+        currentRole = role;
+        loginAlert.classList.add('hidden');
+
+        if (role === 'ADMIN') {
+          tabAdmin.className = 'role-tab-btn active admin-active';
+          tabOperator.className = 'role-tab-btn';
+          portalBadge.className = 'portal-badge badge-admin-portal';
+          portalBadgeIcon.textContent = '🛡️';
+          portalBadgeText.textContent = 'ADMINISTRATOR GATEWAY';
+          portalSubDesc.textContent = 'Full control: Target management, schema, RBAC policies';
+          quickCredsHint.textContent = 'Fill default Lead Admin credentials (admin / admin123)';
+          if (!usernameInput.value || usernameInput.value === 'operator') {
+            usernameInput.value = 'admin';
+            passwordInput.value = 'admin123';
+          }
+        } else {
+          tabAdmin.className = 'role-tab-btn';
+          tabOperator.className = 'role-tab-btn active operator-active';
+          portalBadge.className = 'portal-badge badge-operator-portal';
+          portalBadgeIcon.textContent = '🔧';
+          portalBadgeText.textContent = 'OPERATIONS GATEWAY';
+          portalSubDesc.textContent = 'Operations team: Add new targets & edit existing URLs';
+          quickCredsHint.textContent = 'Fill default Operator credentials (operator / operator123)';
+          if (!usernameInput.value || usernameInput.value === 'admin') {
+            usernameInput.value = 'operator';
+            passwordInput.value = 'operator123';
+          }
+        }
+      }
+
+      tabAdmin.addEventListener('click', () => setRole('ADMIN'));
+      tabOperator.addEventListener('click', () => setRole('OPERATOR'));
+
+      btnFillCreds.addEventListener('click', () => {
+        if (currentRole === 'ADMIN') {
+          usernameInput.value = 'admin';
+          passwordInput.value = 'admin123';
+        } else {
+          usernameInput.value = 'operator';
+          passwordInput.value = 'operator123';
+        }
+        loginAlert.classList.add('hidden');
+      });
+
+      // Toggle password
+      const btnToggle = document.getElementById('btn-toggle-password');
+      btnToggle.addEventListener('click', () => {
+        const type = passwordInput.getAttribute('type') === 'password' ? 'text' : 'password';
+        passwordInput.setAttribute('type', type);
+      });
+
+      // Initial state
+      setRole(currentRole);
+
+      // Handle Submit
+      loginForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        loginAlert.classList.add('hidden');
+        btnSubmit.disabled = true;
+        btnText.textContent = 'Verifying credentials...';
+
+        const username = usernameInput.value.trim();
+        const password = passwordInput.value;
+
+        try {
+          const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
+          });
+
+          const data = await res.json();
+
+          if (data.success && data.token) {
+            localStorage.setItem('noc_token', data.token);
+
+            loginAlert.className = 'login-alert login-alert-success';
+            loginAlert.innerHTML = `✅ <strong>Authenticated!</strong> Welcome ${data.user.displayName}. Redirecting to dashboard...`;
+            loginAlert.classList.remove('hidden');
+
+            setTimeout(() => {
+              window.location.href = '/';
+            }, 600);
+          } else {
+            loginAlert.className = 'login-alert login-alert-error';
+            loginAlert.innerHTML = `⚠️ ${data.error || 'Authentication failed. Please verify credentials.'}`;
+            loginAlert.classList.remove('hidden');
+            btnSubmit.disabled = false;
+            btnText.textContent = 'Authenticate Session';
+          }
+        } catch (err) {
+          loginAlert.className = 'login-alert login-alert-error';
+          loginAlert.innerHTML = `❌ Connection error: ${err.message}`;
+          loginAlert.classList.remove('hidden');
+          btnSubmit.disabled = false;
+          btnText.textContent = 'Authenticate Session';
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
