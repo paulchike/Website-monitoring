@@ -1,0 +1,50 @@
+name: CI/CD Deploy to DigitalOcean
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  test-and-verify:
+    name: Syntax & Build Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (LTS v22)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Install Dependencies
+        run: npm install
+
+      - name: Verify JavaScript Syntax
+        run: |
+          node --check server/index.js
+          node --check server/checker.js
+          node --check server/api.js
+          node --check server/db.js
+          node --check server/scheduler.js
+          node --check server/ws.js
+          echo "✅ All server files passed syntax checks!"
+
+  deploy-to-droplet:
+    name: Deploy to DigitalOcean Droplet
+    needs: test-and-verify
+    runs-on: ubuntu-latest
+    steps:
+      - name: Execute Remote Deployment via SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.DO_HOST }}
+          username: ${{ secrets.DO_USERNAME }}
+          key: ${{ secrets.DO_SSH_KEY }}
+          port: ${{ secrets.DO_PORT || 22 }}
+          script: |
+            chmod +x /var/www/noc-monitor/scripts/deploy.sh
+            /var/www/noc-monitor/scripts/deploy.sh
