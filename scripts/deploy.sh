@@ -43,6 +43,12 @@ fi
 echo "📦 Installing production dependencies..."
 npm install --production
 
+# Sync production targets into SQLite database
+if [ -f "scripts/sync-targets.js" ]; then
+    echo "🎯 Synchronizing production monitoring targets..."
+    node scripts/sync-targets.js
+fi
+
 # Restart or reload process with PM2
 echo "🔄 Reloading PM2 service (zero downtime)..."
 if pm2 describe noc-monitor > /dev/null 2>&1; then
