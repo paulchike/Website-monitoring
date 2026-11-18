@@ -1504,11 +1504,22 @@ class NOCDashboard {
           rbacBtn.classList.add('hidden');
         }
       }
+
+      const smtpProfileBtn = document.getElementById('btn-open-smtp-from-profile');
+      if (smtpProfileBtn) {
+        if (this.currentUser.role === 'ADMIN' || this.userPermissions.can_manage_users) {
+          smtpProfileBtn.classList.remove('hidden');
+        } else {
+          smtpProfileBtn.classList.add('hidden');
+        }
+      }
     } else {
       if (nameEl) nameEl.textContent = 'Guest / Unauthenticated';
       if (groupEl) groupEl.textContent = 'Read-Only Mode';
       if (roleIcon) roleIcon.textContent = '🔒';
       if (rbacBtn) rbacBtn.classList.add('hidden');
+      const smtpProfileBtn = document.getElementById('btn-open-smtp-from-profile');
+      if (smtpProfileBtn) smtpProfileBtn.classList.add('hidden');
 
       if (cardAvatar) cardAvatar.textContent = '🔒';
       if (cardName) cardName.textContent = 'Not Logged In';
@@ -1581,6 +1592,18 @@ class NOCDashboard {
       this.login(u, p);
     });
 
+    // Open SMTP settings from profile
+    document.getElementById('btn-open-smtp-from-profile')?.addEventListener('click', () => {
+      document.getElementById('modal-auth')?.close();
+      document.getElementById('modal-rbac')?.showModal();
+      document.querySelectorAll('.rbac-tab').forEach(t => t.classList.remove('active'));
+      const notifTab = document.querySelector('.rbac-tab[data-tab="notifications"]');
+      if (notifTab) notifTab.classList.add('active');
+      document.querySelectorAll('.rbac-pane').forEach(p => p.classList.add('hidden'));
+      document.getElementById('rbac-pane-notifications')?.classList.remove('hidden');
+      this.loadNotificationSettings();
+    });
+
     document.querySelectorAll('.rbac-tab').forEach(tab => {
       tab.addEventListener('click', () => {
         document.querySelectorAll('.rbac-tab').forEach(t => t.classList.remove('active'));
@@ -1591,9 +1614,25 @@ class NOCDashboard {
 
         if (targetPane === 'groups') this.loadRbacGroups();
         if (targetPane === 'users') this.loadRbacUsers();
+        if (targetPane === 'notifications') this.loadNotificationSettings();
         if (targetPane === 'audit') this.loadRbacAuditLogs();
       });
     });
+
+    // Preset Microsoft 365
+    document.getElementById('btn-preset-ms365')?.addEventListener('click', () => {
+      document.getElementById('smtp-host').value = 'smtp.office365.com';
+      document.getElementById('smtp-port').value = '587';
+      document.getElementById('smtp-secure').value = '0';
+      document.getElementById('smtp-from-name').value = 'PAU NOC Radar Alerts';
+      this.showToast('Applied Microsoft 365 default relay configuration (smtp.office365.com:587 STARTTLS)', 'info');
+    });
+
+    // Notification form submit
+    document.getElementById('form-smtp-settings')?.addEventListener('submit', (e) => this.saveNotificationSettings(e));
+
+    // Send Test Email
+    document.getElementById('btn-test-smtp')?.addEventListener('click', () => this.sendTestEmail());
 
     document.getElementById('btn-show-add-user')?.addEventListener('click', () => {
       const form = document.getElementById('form-create-user');
@@ -1815,6 +1854,152 @@ class NOCDashboard {
       `).join('');
     } catch (e) {
       console.error('Failed to load audit logs:', e);
+    }
+  }
+
+  /* ========================================================================
+     Notification & Microsoft SMTP Settings (Admin Only)
+     ======================================================================== */
+  async loadNotificationSettings() {
+    try {
+      const res = await this.authFetch('/api/notifications/settings');
+      const data = await res.json();
+      if (!data.success) return;
+
+      const s = data.settings;
+      const enabledChk = document.getElementById('smtp-enabled-chk');
+      const hostInput = document.getElementById('smtp-host');
+      const portInput = document.getElementById('smtp-port');
+      const secureSelect = document.getElementById('smtp-secure');
+      const userInput = document.getElementById('smtp-user');
+      const passInput = document.getElementById('smtp-pass');
+      const passStatus = document.getElementById('smtp-pass-status');
+      const fromNameInput = document.getElementById('smtp-from-name');
+      const outageChk = document.getElementById('notify-outage-chk');
+      const recoveryChk = document.getElementById('notify-recovery-chk');
+      const recipientsInput = document.getElementById('notify-recipients');
+
+      if (enabledChk) enabledChk.checked = Boolean(s.smtp_enabled);
+      if (hostInput) hostInput.value = s.smtp_host || 'smtp.office365.com';
+      if (portInput) portInput.value = s.smtp_port || 587;
+      if (secureSelect) secureSelect.value = s.smtp_secure ? '1' : '0';
+      if (userInput) userInput.value = s.smtp_user || '';
+      if (fromNameInput) fromNameInput.value = s.smtp_from_name || 'PAU NOC Radar Alerts';
+      if (outageChk) outageChk.checked = Boolean(s.notify_outage_enabled);
+      if (recoveryChk) recoveryChk.checked = Boolean(s.notify_recovery_enabled);
+      if (recipientsInput) recipientsInput.value = s.notify_recipients || '';
+
+      if (passStatus) {
+        if (s.has_password) {
+          passStatus.textContent = '🔒 Password configured and encrypted in SQLite. Enter a new password only to change it.';
+          passStatus.style.color = '#34d399';
+          if (passInput) passInput.value = '';
+        } else {
+          passStatus.textContent = '⚠️ No password configured yet.';
+          passStatus.style.color = '#f59e0b';
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load notification settings:', e);
+    }
+  }
+
+  async saveNotificationSettings(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn-save-smtp');
+    if (btn) btn.disabled = true;
+
+    const payload = {
+      smtp_enabled: document.getElementById('smtp-enabled-chk')?.checked || false,
+      smtp_host: document.getElementById('smtp-host')?.value.trim() || 'smtp.office365.com',
+      smtp_port: Number(document.getElementById('smtp-port')?.value) || 587,
+      smtp_secure: document.getElementById('smtp-secure')?.value === '1',
+      smtp_user: document.getElementById('smtp-user')?.value.trim() || '',
+      smtp_from_name: document.getElementById('smtp-from-name')?.value.trim() || 'PAU NOC Radar Alerts',
+      notify_outage_enabled: document.getElementById('notify-outage-chk')?.checked || false,
+      notify_recovery_enabled: document.getElementById('notify-recovery-chk')?.checked || false,
+      notify_recipients: document.getElementById('notify-recipients')?.value.trim() || ''
+    };
+
+    const pass = document.getElementById('smtp-pass')?.value;
+    if (pass && pass.trim().length > 0) {
+      payload.smtp_pass = pass;
+    }
+
+    try {
+      const res = await this.authFetch('/api/notifications/settings', {
+        method: 'POST',
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.showToast('✅ Microsoft SMTP & Outage notification settings saved!', 'success');
+        this.loadNotificationSettings();
+      } else {
+        this.showToast(`Error: ${data.error || 'Failed to save notification settings'}`, 'error');
+      }
+    } catch (err) {
+      this.showToast(err.message, 'error');
+    } finally {
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async sendTestEmail() {
+    const testTargetInput = document.getElementById('test-email-target');
+    let target = testTargetInput?.value.trim();
+
+    if (!target) {
+      const recipients = document.getElementById('notify-recipients')?.value.trim();
+      const user = document.getElementById('smtp-user')?.value.trim();
+      target = (recipients ? recipients.split(',')[0].trim() : '') || user;
+    }
+
+    if (!target) {
+      this.showToast('Please enter an email address to receive the test email.', 'error');
+      testTargetInput?.focus();
+      return;
+    }
+
+    const btn = document.getElementById('btn-test-smtp');
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = 'Connecting...';
+    }
+
+    const currentForm = {
+      test_email: target,
+      smtp_host: document.getElementById('smtp-host')?.value.trim(),
+      smtp_port: Number(document.getElementById('smtp-port')?.value),
+      smtp_secure: document.getElementById('smtp-secure')?.value === '1',
+      smtp_user: document.getElementById('smtp-user')?.value.trim(),
+      smtp_from_name: document.getElementById('smtp-from-name')?.value.trim()
+    };
+
+    const pass = document.getElementById('smtp-pass')?.value;
+    if (pass && pass.length > 0) {
+      currentForm.smtp_pass = pass;
+    }
+
+    try {
+      this.showToast(`Testing Microsoft SMTP relay to ${target}...`, 'info');
+      const res = await this.authFetch('/api/notifications/test', {
+        method: 'POST',
+        body: JSON.stringify(currentForm)
+      });
+      const data = await res.json();
+      if (data.success) {
+        this.showToast(`✅ ${data.message}`, 'success');
+      } else {
+        this.showToast(`❌ ${data.error || 'Test email failed'}`, 'error');
+      }
+    } catch (err) {
+      this.showToast(`Network error: ${err.message}`, 'error');
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = '🧪 Send Test Email';
+      }
     }
   }
 

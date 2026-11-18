@@ -290,7 +290,12 @@ const queries = {
   `),
   getRecentAuditLogs: db.prepare(`
     SELECT * FROM audit_logs ORDER BY timestamp DESC LIMIT ?
-  `)
+  `),
+
+  // System Settings (SMTP, Notifications)
+  getSetting: db.prepare(`SELECT value FROM settings WHERE key = ?`),
+  getAllSettings: db.prepare(`SELECT key, value FROM settings`),
+  setSetting: db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`)
 };
 
 // Seed default monitors and realistic historical data if database is empty

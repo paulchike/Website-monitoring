@@ -713,6 +713,11 @@
             <div class="perm-badge perm-allowed" id="perm-del"><span class="perm-icon">✅</span> <span>Delete Targets</span></div>
             <div class="perm-badge perm-allowed" id="perm-tog"><span class="perm-icon">✅</span> <span>Toggle / Pause</span></div>
           </div>
+
+          <button id="btn-open-smtp-from-profile" class="btn btn-secondary btn-sm hidden" style="color: #38bdf8; border-color: rgba(56,189,248,0.4); margin-top: 12px; width: 100%; justify-content: center; gap: 8px;">
+            <span>📧</span>
+            <span>Configure Microsoft 365 SMTP & Outage Alerts</span>
+          </button>
         </div>
 
         <!-- Quick Switcher for Demo / Testing -->
@@ -771,9 +776,10 @@
       </div>
 
       <div class="dialog-form" style="padding: 20px;">
-        <div class="rbac-tabs" style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px;">
+        <div class="rbac-tabs" style="display: flex; gap: 10px; margin-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 10px; flex-wrap: wrap;">
           <button type="button" class="btn btn-sm btn-secondary rbac-tab active" data-tab="groups">User Groups & Permissions</button>
           <button type="button" class="btn btn-sm btn-secondary rbac-tab" data-tab="users">Users & Assignments</button>
+          <button type="button" class="btn btn-sm btn-secondary rbac-tab" data-tab="notifications">📧 Email & Outage Alerts</button>
           <button type="button" class="btn btn-sm btn-secondary rbac-tab" data-tab="audit">Audit Log</button>
         </div>
 
@@ -881,6 +887,114 @@
               <tbody id="rbac-audit-tbody"></tbody>
             </table>
           </div>
+        </div>
+
+        <!-- Tab 4: Microsoft 365 SMTP & Outage Alerts -->
+        <div id="rbac-pane-notifications" class="rbac-pane hidden">
+          <div class="smtp-banner" style="background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.3); border-radius: 8px; padding: 14px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+              <span style="font-size: 26px;">📧</span>
+              <div>
+                <strong style="color: #38bdf8; font-size: 13.5px; display: block;">Microsoft 365 / Office SMTP Relay Configuration</strong>
+                <span style="font-size: 11px; color: #94a3b8;">Automated email alert dispatch on target outage and service resolution</span>
+              </div>
+            </div>
+            <button type="button" class="btn btn-secondary btn-sm" id="btn-preset-ms365" style="border-color: rgba(14, 165, 233, 0.5); color: #7dd3fc; font-weight: 600;">
+              ⚡ Set Microsoft 365 Defaults
+            </button>
+          </div>
+
+          <form id="form-smtp-settings">
+            <!-- Row 1: System Switch & Gateway Host -->
+            <div class="form-row">
+              <div class="form-group flex-1" style="display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 10px;">
+                <label class="checkbox-label" for="smtp-enabled-chk" style="margin: 0; cursor: pointer;">
+                  <input type="checkbox" id="smtp-enabled-chk" />
+                  <span style="font-weight: 700; color: #34d399;">Enable Outgoing Email System</span>
+                </label>
+              </div>
+              <div class="form-group flex-2">
+                <label for="smtp-host">SMTP Relay Host *</label>
+                <input type="text" id="smtp-host" required value="smtp.office365.com" placeholder="smtp.office365.com" />
+              </div>
+              <div class="form-group flex-1">
+                <label for="smtp-port">Port</label>
+                <input type="number" id="smtp-port" required value="587" />
+              </div>
+              <div class="form-group flex-1">
+                <label for="smtp-secure">Encryption</label>
+                <select id="smtp-secure" class="noc-select">
+                  <option value="0" selected>STARTTLS (Port 587)</option>
+                  <option value="1">SSL/TLS (Port 465)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Row 2: Microsoft Account Credentials -->
+            <div class="form-row">
+              <div class="form-group flex-2">
+                <label for="smtp-user">Microsoft 365 Username / Mailbox *</label>
+                <input type="email" id="smtp-user" required placeholder="alerts@pau.edu.ng or user@domain.com" />
+              </div>
+              <div class="form-group flex-2">
+                <label for="smtp-pass">Password / App Password *</label>
+                <input type="password" id="smtp-pass" placeholder="•••••••• (Enter new password to update)" />
+                <span id="smtp-pass-status" style="font-size: 10px; color: #94a3b8; margin-top: 2px; display: block;"></span>
+              </div>
+              <div class="form-group flex-2">
+                <label for="smtp-from-name">Sender Display Name</label>
+                <input type="text" id="smtp-from-name" value="PAU NOC Radar Alerts" placeholder="e.g. PAU NOC Alerts" />
+              </div>
+            </div>
+
+            <!-- Row 3: Service Outage Trigger Notification & Recipient Provision -->
+            <div style="background: rgba(239, 68, 68, 0.06); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 16px; margin: 18px 0;">
+              <div style="font-size: 12px; font-weight: 700; color: #f87171; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
+                <span>🚨</span>
+                <span>SERVICE OUTAGE NOTIFICATION TRIGGERS</span>
+              </div>
+
+              <div class="form-row" style="margin-bottom: 12px;">
+                <div class="form-group flex-1">
+                  <label class="checkbox-label" for="notify-outage-chk" style="cursor: pointer;">
+                    <input type="checkbox" id="notify-outage-chk" checked />
+                    <span style="color: #fca5a5; font-weight: 600;">Send instant email alert when a monitored target goes DOWN</span>
+                  </label>
+                </div>
+                <div class="form-group flex-1">
+                  <label class="checkbox-label" for="notify-recovery-chk" style="cursor: pointer;">
+                    <input type="checkbox" id="notify-recovery-chk" checked />
+                    <span style="color: #6ee7b7; font-weight: 600;">Send all-clear resolution email when service is RESTORED</span>
+                  </label>
+                </div>
+              </div>
+
+              <!-- Provision for recipient email address(es) -->
+              <div class="form-group" style="margin-top: 10px;">
+                <label for="notify-recipients" style="color: #f1f5f9; font-weight: 700; font-size: 11px;">
+                  Alert Recipient Email Addresses * (Comma-separated)
+                </label>
+                <input type="text" id="notify-recipients" placeholder="e.g. devops@pau.edu.ng, sysadmin@pau.edu.ng, noc@pau.edu.ng" style="background: #060b17; border-color: rgba(239, 68, 68, 0.5); color: #fff; font-family: var(--font-mono); font-size: 12.5px;" />
+                <span style="font-size: 11px; color: #94a3b8; margin-top: 5px; display: block;">
+                  Incident failure alerts and recovery notices will be immediately dispatched to these recipients. You can enter a single email or multiple separated by commas.
+                </span>
+              </div>
+            </div>
+
+            <!-- Actions & Test Email Section -->
+            <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 20px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px;">
+              <div style="display: flex; align-items: center; gap: 8px; flex: 1; max-width: 440px;">
+                <input type="email" id="test-email-target" placeholder="Recipient address for test email" style="padding: 7px 10px; font-size: 12px; background: #060b17; border: 1px solid rgba(255,255,255,0.15); border-radius: 6px; color: #fff; flex: 1;" />
+                <button type="button" class="btn btn-secondary btn-sm" id="btn-test-smtp" style="border-color: rgba(147, 51, 234, 0.5); color: #d8b4fe; white-space: nowrap;">
+                  🧪 Send Test Email
+                </button>
+              </div>
+
+              <button type="submit" class="btn btn-primary" id="btn-save-smtp">
+                💾 Save Notification Settings
+              </button>
+            </div>
+          </form>
         </div>
       </div>
 

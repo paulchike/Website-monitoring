@@ -1,5 +1,6 @@
 const { queries } = require('./db');
 const { performCheck } = require('./checker');
+const notifier = require('./notifier');
 
 class Scheduler {
   constructor() {
@@ -137,6 +138,10 @@ class Scheduler {
             status: 'ACTIVE'
           };
           this.broadcast('incident_started', newIncident);
+          // Dispatch Outage Email Alert via Microsoft 365 Relay
+          notifier.sendOutageAlert(newIncident, monitor, result).catch(e => {
+            console.warn('[Scheduler] Outage email dispatch warning:', e.message);
+          });
         }
       } else if (result.status === 'UP') {
         if (activeIncident) {
@@ -147,6 +152,10 @@ class Scheduler {
             status: 'RESOLVED'
           };
           this.broadcast('incident_resolved', resolvedIncident);
+          // Dispatch Recovery Email Alert via Microsoft 365 Relay
+          notifier.sendRecoveryAlert(resolvedIncident, monitor, result).catch(e => {
+            console.warn('[Scheduler] Recovery email dispatch warning:', e.message);
+          });
         }
       }
 
