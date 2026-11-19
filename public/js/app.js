@@ -933,28 +933,61 @@ class NOCDashboard {
       const toggleBtn = document.getElementById('detail-btn-toggle');
       if (toggleBtn) {
         toggleBtn.textContent = m.is_active ? 'Pause Monitoring' : 'Resume Monitoring';
-        toggleBtn.onclick = async () => {
-          await this.toggleActive(m.id);
-          this.openDetails(m.id);
-        };
+        if (this.userPermissions.can_toggle_url) {
+          toggleBtn.classList.remove('btn-locked');
+          toggleBtn.title = 'Pause or resume monitoring';
+          toggleBtn.onclick = async () => {
+            await this.toggleActive(m.id);
+            this.openDetails(m.id);
+          };
+        } else {
+          toggleBtn.classList.add('btn-locked');
+          toggleBtn.title = 'Locked: Requires Admin or Operator privilege to pause/resume';
+          toggleBtn.onclick = () => {
+            this.showToast('Permission Denied: Only users with Admin or Operator privilege can pause/resume monitoring.', 'error');
+            this.openAuthModal();
+          };
+        }
       }
 
       const editBtn = document.getElementById('detail-btn-edit');
       if (editBtn) {
-        editBtn.onclick = () => {
-          modal.close();
-          this.openEditModal(m);
-        };
+        if (this.userPermissions.can_edit_url) {
+          editBtn.classList.remove('btn-locked');
+          editBtn.title = 'Edit target settings';
+          editBtn.onclick = () => {
+            modal.close();
+            this.openEditModal(m);
+          };
+        } else {
+          editBtn.classList.add('btn-locked');
+          editBtn.title = 'Locked: Requires Admin or Operator privilege to edit settings';
+          editBtn.onclick = () => {
+            this.showToast('Permission Denied: Only users with Admin or Operator privilege can edit settings.', 'error');
+            this.openAuthModal();
+          };
+        }
       }
 
       const deleteBtn = document.getElementById('detail-btn-delete');
       if (deleteBtn) {
-        deleteBtn.onclick = () => {
-          if (confirm(`Are you sure you want to permanently delete monitor "${m.name}"?`)) {
-            this.deleteMonitor(m.id);
-            modal.close();
-          }
-        };
+        if (this.userPermissions.can_delete_url) {
+          deleteBtn.classList.remove('btn-locked');
+          deleteBtn.title = 'Delete target';
+          deleteBtn.onclick = () => {
+            if (confirm(`Are you sure you want to permanently delete monitor "${m.name}"?`)) {
+              this.deleteMonitor(m.id);
+              modal.close();
+            }
+          };
+        } else {
+          deleteBtn.classList.add('btn-locked');
+          deleteBtn.title = 'Locked: Requires Admin or Operator privilege to delete targets';
+          deleteBtn.onclick = () => {
+            this.showToast('Permission Denied: Only users with Admin or Operator privilege can delete targets.', 'error');
+            this.openAuthModal();
+          };
+        }
       }
 
       modal.showModal();
@@ -976,11 +1009,7 @@ class NOCDashboard {
      ======================================================================== */
   openAddModal() {
     if (!this.userPermissions.can_add_url) {
-      if (!this.currentUser) {
-        this.showToast('Authentication Required: Please log in at /admin to add new monitoring targets.', 'error');
-      } else {
-        this.showToast('Permission Denied: Your user group cannot add targets. Admin or Operator access required.', 'error');
-      }
+      this.showToast('Permission Denied: Only users with Admin or Operator privilege can create targets.', 'error');
       this.openAuthModal();
       return;
     }
@@ -1003,7 +1032,7 @@ class NOCDashboard {
 
   openEditById(monitorId) {
     if (!this.userPermissions.can_edit_url) {
-      this.showToast('Permission Denied: Your user group cannot edit targets. Please log in as an Operator or Admin.', 'error');
+      this.showToast('Permission Denied: Only users with Admin or Operator privilege can edit settings.', 'error');
       this.openAuthModal();
       return;
     }
@@ -1013,7 +1042,7 @@ class NOCDashboard {
 
   openEditModal(monitor) {
     if (!this.userPermissions.can_edit_url) {
-      this.showToast('Permission Denied: Your user group cannot edit targets. Please log in as an Operator or Admin.', 'error');
+      this.showToast('Permission Denied: Only users with Admin or Operator privilege can edit settings.', 'error');
       this.openAuthModal();
       return;
     }
@@ -1105,7 +1134,7 @@ class NOCDashboard {
 
   async toggleActive(monitorId) {
     if (!this.userPermissions.can_toggle_url) {
-      this.showToast('Permission Denied: Your user group cannot pause/resume targets.', 'error');
+      this.showToast('Permission Denied: Only users with Admin or Operator privilege can pause/resume monitoring.', 'error');
       this.openAuthModal();
       return;
     }
@@ -1127,7 +1156,7 @@ class NOCDashboard {
 
   async deleteMonitor(monitorId) {
     if (!this.userPermissions.can_delete_url) {
-      this.showToast('Permission Denied: Your user group cannot delete targets (Admin required).', 'error');
+      this.showToast('Permission Denied: Only users with Admin or Operator privilege can delete targets.', 'error');
       this.openAuthModal();
       return;
     }
@@ -1531,7 +1560,7 @@ class NOCDashboard {
 
       const smtpProfileBtn = document.getElementById('btn-open-smtp-from-profile');
       if (smtpProfileBtn) {
-        if (this.currentUser.role === 'ADMIN' || this.userPermissions.can_manage_users) {
+        if (this.currentUser.role === 'ADMIN' || this.currentUser.role === 'OPERATOR' || this.userPermissions.can_edit_url) {
           smtpProfileBtn.classList.remove('hidden');
         } else {
           smtpProfileBtn.classList.add('hidden');
@@ -1581,10 +1610,10 @@ class NOCDashboard {
     if (!list) return;
 
     const perms = [
-      { key: 'can_add_url', label: 'Add New Monitoring URLs' },
-      { key: 'can_edit_url', label: 'Edit Target URLs & Config' },
-      { key: 'can_delete_url', label: 'Delete Monitoring Targets' },
-      { key: 'can_toggle_url', label: 'Pause / Resume Targets' }
+      { key: 'can_toggle_url', label: 'Pause / Resume Monitoring' },
+      { key: 'can_edit_url', label: 'Edit Target & Alert Settings' },
+      { key: 'can_add_url', label: 'Create New Targets' },
+      { key: 'can_delete_url', label: 'Delete Targets' }
     ];
 
     list.innerHTML = perms.map(p => {
@@ -1614,6 +1643,11 @@ class NOCDashboard {
     document.getElementById('btn-open-smtp-from-profile')?.addEventListener('click', () => {
       document.getElementById('modal-auth')?.close();
       document.getElementById('modal-rbac')?.showModal();
+      const canManageUsers = Boolean(this.currentUser && (this.currentUser.role === 'ADMIN' || this.userPermissions.can_manage_users));
+      document.querySelectorAll('.rbac-tab[data-tab="groups"], .rbac-tab[data-tab="users"], .rbac-tab[data-tab="audit"]').forEach(el => {
+        if (canManageUsers) el.classList.remove('hidden');
+        else el.classList.add('hidden');
+      });
       document.querySelectorAll('.rbac-tab').forEach(t => t.classList.remove('active'));
       const notifTab = document.querySelector('.rbac-tab[data-tab="notifications"]');
       if (notifTab) notifTab.classList.add('active');
@@ -1729,8 +1763,25 @@ class NOCDashboard {
   }
 
   async openRbacModal() {
+    const canManageUsers = Boolean(this.currentUser && (this.currentUser.role === 'ADMIN' || this.userPermissions.can_manage_users));
+    document.querySelectorAll('.rbac-tab[data-tab="groups"], .rbac-tab[data-tab="users"], .rbac-tab[data-tab="audit"]').forEach(el => {
+      if (canManageUsers) el.classList.remove('hidden');
+      else el.classList.add('hidden');
+    });
     document.getElementById('modal-rbac')?.showModal();
-    this.loadRbacGroups();
+    if (canManageUsers) {
+      document.querySelectorAll('.rbac-tab').forEach(t => t.classList.remove('active'));
+      document.querySelector('.rbac-tab[data-tab="groups"]')?.classList.add('active');
+      document.querySelectorAll('.rbac-pane').forEach(p => p.classList.add('hidden'));
+      document.getElementById('rbac-pane-groups')?.classList.remove('hidden');
+      this.loadRbacGroups();
+    } else {
+      document.querySelectorAll('.rbac-tab').forEach(t => t.classList.remove('active'));
+      document.querySelector('.rbac-tab[data-tab="notifications"]')?.classList.add('active');
+      document.querySelectorAll('.rbac-pane').forEach(p => p.classList.add('hidden'));
+      document.getElementById('rbac-pane-notifications')?.classList.remove('hidden');
+      this.loadNotificationSettings();
+    }
   }
 
   async loadRbacGroups() {

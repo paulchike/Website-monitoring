@@ -245,11 +245,11 @@ router.get('/auth/audit-logs', requireAuth, (req, res) => {
 });
 
 /* ========================================================================
-   Notification & Microsoft SMTP Settings (Admin Only)
+   Notification & Microsoft SMTP Settings (Admin & Operator Accessible)
    ======================================================================== */
 
 // GET /api/notifications/settings
-router.get('/notifications/settings', requireAuth, requirePermission('can_manage_users'), (req, res) => {
+router.get('/notifications/settings', requireAuth, requirePermission('can_edit_url'), (req, res) => {
   try {
     const raw = notifier.getNotificationSettings();
     const hasPassword = Boolean(raw.smtp_pass && raw.smtp_pass.length > 0);
@@ -276,7 +276,7 @@ router.get('/notifications/settings', requireAuth, requirePermission('can_manage
 });
 
 // POST /api/notifications/settings
-router.post('/notifications/settings', requireAuth, requirePermission('can_manage_users'), (req, res) => {
+router.post('/notifications/settings', requireAuth, requirePermission('can_edit_url'), (req, res) => {
   try {
     const {
       smtp_enabled,
@@ -317,7 +317,7 @@ router.post('/notifications/settings', requireAuth, requirePermission('can_manag
 });
 
 // POST /api/notifications/test (Send test email via Microsoft SMTP)
-router.post('/notifications/test', requireAuth, requirePermission('can_manage_users'), async (req, res) => {
+router.post('/notifications/test', requireAuth, requirePermission('can_edit_url'), async (req, res) => {
   try {
     const { test_email, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, smtp_from_email, smtp_from_name } = req.body;
 

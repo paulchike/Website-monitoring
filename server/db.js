@@ -469,7 +469,7 @@ function seedAuthIfEmpty() {
       INSERT INTO user_groups (name, description, can_add_url, can_edit_url, can_delete_url, can_toggle_url, can_manage_users)
       VALUES 
         ('NOC Administrators', 'Full control: Add, edit, and delete monitoring URLs, manage users and roles', 1, 1, 1, 1, 1),
-        ('Operations Engineers', 'Operations team: Can add new URLs and edit existing URLs, acknowledge incidents', 1, 1, 0, 1, 0),
+        ('Operations Engineers', 'Operations team: Pause/resume, edit settings, create and delete monitoring targets', 1, 1, 1, 1, 0),
         ('Stakeholders & Viewers', 'Read-only access: View status dashboards, wallboards, and SLA metrics', 0, 0, 0, 0, 0)
     `).run();
   }

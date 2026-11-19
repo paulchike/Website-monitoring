@@ -109,10 +109,10 @@ function authenticate(req, res, next) {
       groupId: user.group_id,
       groupName: user.group_name || 'Ungrouped',
       permissions: {
-        can_add_url: Boolean(user.role === 'ADMIN' || user.can_add_url),
-        can_edit_url: Boolean(user.role === 'ADMIN' || user.can_edit_url),
-        can_delete_url: Boolean(user.role === 'ADMIN' || user.can_delete_url),
-        can_toggle_url: Boolean(user.role === 'ADMIN' || user.can_toggle_url),
+        can_add_url: Boolean(user.role === 'ADMIN' || user.role === 'OPERATOR' || user.can_add_url),
+        can_edit_url: Boolean(user.role === 'ADMIN' || user.role === 'OPERATOR' || user.can_edit_url),
+        can_delete_url: Boolean(user.role === 'ADMIN' || user.role === 'OPERATOR' || user.can_delete_url),
+        can_toggle_url: Boolean(user.role === 'ADMIN' || user.role === 'OPERATOR' || user.can_toggle_url),
         can_manage_users: Boolean(user.role === 'ADMIN' || user.can_manage_users)
       }
     };
@@ -140,26 +140,32 @@ function requirePermission(perm) {
     if (!req.user) {
       return res.status(401).json({
         success: false,
-        error: 'Authentication required. Please log in.'
+        error: 'Authentication required. Please log in as an Administrator or Operator.'
       });
     }
 
+    // Admins bypass all individual checks
     if (req.user.role === 'ADMIN') {
-      return next(); // Admins bypass all individual checks
+      return next();
+    }
+
+    // Operators have access to pause/resume, edit settings, create targets, delete targets
+    if (req.user.role === 'OPERATOR' && perm !== 'can_manage_users') {
+      return next();
     }
 
     if (!req.user.permissions || !req.user.permissions[perm]) {
       const permDescriptions = {
-        can_add_url: 'add new monitoring targets',
-        can_edit_url: 'edit existing monitoring targets',
+        can_add_url: 'create new monitoring targets',
+        can_edit_url: 'edit target and notification settings',
         can_delete_url: 'delete monitoring targets',
-        can_toggle_url: 'pause or resume monitoring targets',
+        can_toggle_url: 'pause or resume monitoring',
         can_manage_users: 'manage user accounts and groups'
       };
       const desc = permDescriptions[perm] || perm;
       return res.status(403).json({
         success: false,
-        error: `Permission Denied: Your user group (${req.user.groupName}) is not authorized to ${desc}.`
+        error: `Permission Denied: Only users with Admin or Operator privilege can ${desc}.`
       });
     }
 
