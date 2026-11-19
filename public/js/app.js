@@ -1491,6 +1491,7 @@ class NOCDashboard {
   }
 
   updateUserUI() {
+    const userAuthBtn = document.getElementById('btn-user-auth');
     const nameEl = document.getElementById('user-display-name');
     const groupEl = document.getElementById('user-group-tag');
     const roleIcon = document.getElementById('user-role-icon');
@@ -1507,11 +1508,13 @@ class NOCDashboard {
       const roleIcons = { ADMIN: '🛡️', OPERATOR: '🔧', VIEWER: '👁️' };
       const icon = roleIcons[this.currentUser.role] || '👤';
 
+      // Show user profile badge only when there is an active login
+      if (userAuthBtn) userAuthBtn.classList.remove('hidden');
+      if (headerLoginBtn) headerLoginBtn.classList.add('hidden');
+
       if (nameEl) nameEl.textContent = this.currentUser.displayName || this.currentUser.username;
       if (groupEl) groupEl.textContent = `${this.currentUser.groupName} • ${this.currentUser.role}`;
       if (roleIcon) roleIcon.textContent = icon;
-
-      if (headerLoginBtn) headerLoginBtn.classList.add('hidden');
 
       if (cardAvatar) cardAvatar.textContent = icon;
       if (cardName) cardName.textContent = this.currentUser.displayName;
@@ -1535,10 +1538,8 @@ class NOCDashboard {
         }
       }
     } else {
-      if (nameEl) nameEl.textContent = 'Public View';
-      if (groupEl) groupEl.textContent = 'No Active Profile';
-      if (roleIcon) roleIcon.textContent = '🔒';
-
+      // Unauthenticated visitor: Hide profile button from landing page
+      if (userAuthBtn) userAuthBtn.classList.add('hidden');
       if (headerLoginBtn) headerLoginBtn.classList.remove('hidden');
       if (rbacBtn) rbacBtn.classList.add('hidden');
 

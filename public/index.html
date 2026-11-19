@@ -84,13 +84,13 @@
         <span>+ NEW TARGET</span>
       </button>
 
-      <!-- RBAC Session & User Group Badge -->
+      <!-- RBAC Session & User Group Badge (Visible only on active admin/staff login) -->
       <div class="user-auth-badge-wrap" style="display: flex; align-items: center; gap: 6px;">
-        <button id="btn-user-auth" class="btn btn-secondary btn-user-badge" title="Access Control: Click to view session and permissions" style="padding: 6px 10px; display: flex; align-items: center; gap: 8px;">
-          <span id="user-role-icon" class="role-icon">🔒</span>
+        <button id="btn-user-auth" class="btn btn-secondary btn-user-badge hidden" title="Access Control: Click to view session and permissions" style="padding: 6px 10px; display: flex; align-items: center; gap: 8px;">
+          <span id="user-role-icon" class="role-icon">🛡️</span>
           <div style="display: flex; flex-direction: column; text-align: left; line-height: 1.1;">
-            <span id="user-display-name" style="font-weight: 700; font-size: 11px; color: #cbd5e1;">Public View</span>
-            <span id="user-group-tag" style="font-size: 9px; color: #94a3b8; letter-spacing: 0.3px;">No Active Profile</span>
+            <span id="user-display-name" style="font-weight: 700; font-size: 11px; color: #fff;">Admin</span>
+            <span id="user-group-tag" style="font-size: 9px; color: #94a3b8; letter-spacing: 0.3px;">NOC Administrators</span>
           </div>
         </button>
 
