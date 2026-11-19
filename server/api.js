@@ -60,10 +60,10 @@ router.post('/auth/login', (req, res) => {
         groupId: user.group_id,
         groupName: user.group_name || 'Ungrouped',
         permissions: {
-          can_add_url: Boolean(user.role === 'ADMIN' || user.can_add_url),
-          can_edit_url: Boolean(user.role === 'ADMIN' || user.can_edit_url),
-          can_delete_url: Boolean(user.role === 'ADMIN' || user.can_delete_url),
-          can_toggle_url: Boolean(user.role === 'ADMIN' || user.can_toggle_url),
+          can_add_url: Boolean(user.role === 'ADMIN' || user.role === 'OPERATOR' || user.can_add_url),
+          can_edit_url: Boolean(user.role === 'ADMIN' || user.role === 'OPERATOR' || user.can_edit_url),
+          can_delete_url: Boolean(user.role === 'ADMIN' || user.role === 'OPERATOR' || user.can_delete_url),
+          can_toggle_url: Boolean(user.role === 'ADMIN' || user.role === 'OPERATOR' || user.can_toggle_url),
           can_manage_users: Boolean(user.role === 'ADMIN' || user.can_manage_users)
         }
       }
