@@ -79,23 +79,25 @@
         <span>REPORTS</span>
       </button>
 
-      <button id="btn-add-monitor" class="btn btn-primary" title="Add a new website or landing page target">
-        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <line x1="12" y1="5" x2="12" y2="19"></line>
-          <line x1="5" y1="12" x2="19" y2="12"></line>
-        </svg>
+      <button id="btn-add-monitor" class="btn btn-primary btn-locked" title="Login Required: Requires Administrator or Operator role to add targets">
+        <span style="font-size: 13px;">🔒</span>
         <span>+ NEW TARGET</span>
       </button>
 
       <!-- RBAC Session & User Group Badge -->
       <div class="user-auth-badge-wrap" style="display: flex; align-items: center; gap: 6px;">
-        <button id="btn-user-auth" class="btn btn-secondary btn-user-badge" title="Access Control: Click to view permissions, switch group, or log in" style="padding: 6px 10px; display: flex; align-items: center; gap: 8px;">
-          <span id="user-role-icon" class="role-icon">🛡️</span>
+        <button id="btn-user-auth" class="btn btn-secondary btn-user-badge" title="Access Control: Click to view session and permissions" style="padding: 6px 10px; display: flex; align-items: center; gap: 8px;">
+          <span id="user-role-icon" class="role-icon">🔒</span>
           <div style="display: flex; flex-direction: column; text-align: left; line-height: 1.1;">
-            <span id="user-display-name" style="font-weight: 700; font-size: 11px; color: #fff;">Admin</span>
-            <span id="user-group-tag" style="font-size: 9px; color: #94a3b8; letter-spacing: 0.3px;">NOC Administrators</span>
+            <span id="user-display-name" style="font-weight: 700; font-size: 11px; color: #cbd5e1;">Public View</span>
+            <span id="user-group-tag" style="font-size: 9px; color: #94a3b8; letter-spacing: 0.3px;">No Active Profile</span>
           </div>
         </button>
+
+        <a id="btn-header-login" href="/admin" class="btn btn-secondary btn-sm" title="Log in as Administrator" style="border-color: rgba(168, 85, 247, 0.4); color: #d8b4fe; display: flex; align-items: center; gap: 6px; text-decoration: none; font-weight: 600; padding: 6px 12px;">
+          <span>🛡️</span>
+          <span>Admin Login</span>
+        </a>
 
         <button id="btn-open-rbac" class="btn btn-icon hidden" title="Manage RBAC User Groups & Permissions (Admin Only)" style="border-color: rgba(168, 85, 247, 0.4); color: #c084fc;">
           <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -697,21 +699,21 @@
         <div id="auth-current-card" class="auth-status-card" style="background: rgba(15, 23, 42, 0.8); border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; padding: 16px; margin-bottom: 16px;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
             <div style="display: flex; align-items: center; gap: 10px;">
-              <span id="auth-card-avatar" style="font-size: 24px;">🛡️</span>
+              <span id="auth-card-avatar" style="font-size: 24px;">🔒</span>
               <div>
-                <strong id="auth-card-name" style="color: #fff; font-size: 14px; display: block;">Lead NOC Administrator</strong>
-                <span id="auth-card-sub" style="font-size: 11px; color: #94a3b8;">Group: NOC Administrators • Role: ADMIN</span>
+                <strong id="auth-card-name" style="color: #fff; font-size: 14px; display: block;">Public Visitor / Read-Only</strong>
+                <span id="auth-card-sub" style="font-size: 11px; color: #94a3b8;">No active user profile. Administrative operations are locked.</span>
               </div>
             </div>
-            <button id="btn-auth-logout" class="btn btn-secondary btn-sm" style="color: #f87171; border-color: rgba(239,68,68,0.3);">LOG OUT</button>
+            <button id="btn-auth-logout" class="btn btn-secondary btn-sm hidden" style="color: #f87171; border-color: rgba(239,68,68,0.3);">LOG OUT</button>
           </div>
 
           <div style="font-size: 11px; font-weight: 700; text-transform: uppercase; color: #64748b; margin-bottom: 8px; letter-spacing: 0.5px;">Active Group Permissions:</div>
           <div id="auth-perm-list" style="display: grid; grid-template-columns: 1fr 1fr; gap: 6px; font-size: 11px;">
-            <div class="perm-badge perm-allowed" id="perm-add"><span class="perm-icon">✅</span> <span>Add New URLs</span></div>
-            <div class="perm-badge perm-allowed" id="perm-edit"><span class="perm-icon">✅</span> <span>Edit Target URLs</span></div>
-            <div class="perm-badge perm-allowed" id="perm-del"><span class="perm-icon">✅</span> <span>Delete Targets</span></div>
-            <div class="perm-badge perm-allowed" id="perm-tog"><span class="perm-icon">✅</span> <span>Toggle / Pause</span></div>
+            <div class="perm-badge perm-denied" id="perm-add"><span class="perm-icon">❌</span> <span>Add New URLs: <strong>DENIED</strong></span></div>
+            <div class="perm-badge perm-denied" id="perm-edit"><span class="perm-icon">❌</span> <span>Edit Target URLs: <strong>DENIED</strong></span></div>
+            <div class="perm-badge perm-denied" id="perm-del"><span class="perm-icon">❌</span> <span>Delete Targets: <strong>DENIED</strong></span></div>
+            <div class="perm-badge perm-denied" id="perm-tog"><span class="perm-icon">❌</span> <span>Toggle / Pause: <strong>DENIED</strong></span></div>
           </div>
 
           <button id="btn-open-smtp-from-profile" class="btn btn-secondary btn-sm hidden" style="color: #38bdf8; border-color: rgba(56,189,248,0.4); margin-top: 12px; width: 100%; justify-content: center; gap: 8px;">
@@ -720,25 +722,20 @@
           </button>
         </div>
 
-        <!-- Quick Switcher for Demo / Testing -->
+        <!-- Staff Authentication Portals -->
         <div style="margin-bottom: 20px;">
-          <label style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 700; letter-spacing: 0.5px;">Quick Switch User Group (Preloaded Credentials)</label>
-          <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px;">
-            <button type="button" class="btn btn-secondary btn-sm quick-login-btn" data-user="admin" data-pass="admin123" style="flex-direction: column; padding: 10px 6px; text-align: center;">
-              <span style="font-size: 16px;">🛡️</span>
-              <strong style="color: #a78bfa; font-size: 12px; margin-top: 4px;">Admin</strong>
-              <span style="font-size: 10px; color: #64748b;">Add & Edit & Delete</span>
-            </button>
-            <button type="button" class="btn btn-secondary btn-sm quick-login-btn" data-user="operator" data-pass="operator123" style="flex-direction: column; padding: 10px 6px; text-align: center;">
-              <span style="font-size: 16px;">🔧</span>
-              <strong style="color: #38bdf8; font-size: 12px; margin-top: 4px;">Operator</strong>
-              <span style="font-size: 10px; color: #64748b;">Add & Edit URLs</span>
-            </button>
-            <button type="button" class="btn btn-secondary btn-sm quick-login-btn" data-user="viewer" data-pass="viewer123" style="flex-direction: column; padding: 10px 6px; text-align: center;">
-              <span style="font-size: 16px;">👁️</span>
-              <strong style="color: #34d399; font-size: 12px; margin-top: 4px;">Viewer</strong>
-              <span style="font-size: 10px; color: #64748b;">Read-Only / Lock</span>
-            </button>
+          <label style="font-size: 11px; text-transform: uppercase; color: #94a3b8; font-weight: 700; letter-spacing: 0.5px;">Staff Authentication Portals</label>
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 8px;">
+            <a href="/admin" class="btn btn-secondary btn-sm" style="flex-direction: column; padding: 12px 8px; text-align: center; border-color: rgba(168, 85, 247, 0.4); text-decoration: none;">
+              <span style="font-size: 18px;">🛡️</span>
+              <strong style="color: #d8b4fe; font-size: 12px; margin-top: 4px;">Admin Portal (/admin)</strong>
+              <span style="font-size: 10px; color: #94a3b8;">Manage targets, SMTP & RBAC</span>
+            </a>
+            <a href="/operator" class="btn btn-secondary btn-sm" style="flex-direction: column; padding: 12px 8px; text-align: center; border-color: rgba(56, 189, 248, 0.4); text-decoration: none;">
+              <span style="font-size: 18px;">🔧</span>
+              <strong style="color: #7dd3fc; font-size: 12px; margin-top: 4px;">Operator Portal (/operator)</strong>
+              <span style="font-size: 10px; color: #94a3b8;">Add & edit targets</span>
+            </a>
           </div>
         </div>
 
@@ -746,19 +743,14 @@
         <form id="form-auth-login" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px;">
           <div class="form-group" style="margin-bottom: 12px;">
             <label for="auth-username" style="font-size: 11px; color: #cbd5e1;">Username</label>
-            <input type="text" id="auth-username" required placeholder="admin / operator / viewer" style="background: #060b17; border-color: rgba(255,255,255,0.15);" />
+            <input type="text" id="auth-username" required placeholder="Enter username" style="background: #060b17; border-color: rgba(255,255,255,0.15);" />
           </div>
           <div class="form-group" style="margin-bottom: 16px;">
             <label for="auth-password" style="font-size: 11px; color: #cbd5e1;">Password</label>
-            <input type="password" id="auth-password" required placeholder="••••••••" style="background: #060b17; border-color: rgba(255,255,255,0.15);" />
+            <input type="password" id="auth-password" required placeholder="Enter password" style="background: #060b17; border-color: rgba(255,255,255,0.15);" />
           </div>
           <div id="auth-error-msg" class="hidden" style="color: #f87171; font-size: 12px; margin-bottom: 12px; padding: 8px; background: rgba(239, 68, 68, 0.1); border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.3);"></div>
           <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">Sign In to Session</button>
-          <div style="margin-top: 14px; text-align: center; border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px; display: flex; justify-content: space-around; align-items: center;">
-            <a href="/admin/login" style="font-size: 11px; color: #c084fc; text-decoration: none; font-weight: 600;">🛡️ Admin Portal (/admin)</a>
-            <span style="color: #475569;">•</span>
-            <a href="/operator/login" style="font-size: 11px; color: #38bdf8; text-decoration: none; font-weight: 600;">🔧 Operator Portal (/operator)</a>
-          </div>
         </form>
       </div>
     </div>

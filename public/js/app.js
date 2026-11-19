@@ -17,7 +17,9 @@ class NOCDashboard {
     this.audioCtx = null;
     this.streamLogs = [];
     this.isStreamOpen = false;
-    this.token = localStorage.getItem('noc_token') || null;
+    // Wipe legacy auto-login token so landing page starts with no active profile
+    localStorage.removeItem('noc_token');
+    this.token = localStorage.getItem('pau_noc_session_token') || null;
     this.currentUser = null;
     this.userPermissions = {
       can_add_url: false,
@@ -974,7 +976,11 @@ class NOCDashboard {
      ======================================================================== */
   openAddModal() {
     if (!this.userPermissions.can_add_url) {
-      this.showToast('Permission Denied: Your user group cannot add new targets. Please log in as an Operator or Admin.', 'error');
+      if (!this.currentUser) {
+        this.showToast('Authentication Required: Please log in at /admin to add new monitoring targets.', 'error');
+      } else {
+        this.showToast('Permission Denied: Your user group cannot add targets. Admin or Operator access required.', 'error');
+      }
       this.openAuthModal();
       return;
     }
@@ -1426,26 +1432,22 @@ class NOCDashboard {
      RBAC & Authentication Controller
      ======================================================================== */
   async initAuth() {
-    if (!this.token) {
-      try {
-        const res = await fetch('/api/auth/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: 'admin', password: 'admin123' })
-        });
-        const data = await res.json();
-        if (data.success && data.token) {
-          this.token = data.token;
-          localStorage.setItem('noc_token', this.token);
-          this.currentUser = data.user;
-          this.userPermissions = data.user.permissions;
-        }
-      } catch (e) {
-        console.warn('Initial session boot:', e);
-      }
+    // Only check session if an explicit session token exists in storage.
+    // The landing page defaults to public view with NO active profile until user logs in.
+    if (this.token) {
+      await this.checkCurrentSession();
+    } else {
+      this.currentUser = null;
+      this.userPermissions = {
+        can_add_url: false,
+        can_edit_url: false,
+        can_delete_url: false,
+        can_toggle_url: false,
+        can_manage_users: false
+      };
+      this.updateUserUI();
     }
 
-    await this.checkCurrentSession();
     this.setupAuthEventListeners();
   }
 
@@ -1459,6 +1461,7 @@ class NOCDashboard {
         this.currentUser = data.user;
         this.userPermissions = data.permissions;
       } else {
+        this.token = null;
         this.currentUser = null;
         this.userPermissions = {
           can_add_url: false,
@@ -1467,9 +1470,22 @@ class NOCDashboard {
           can_toggle_url: false,
           can_manage_users: false
         };
+        localStorage.removeItem('pau_noc_session_token');
+        localStorage.removeItem('noc_token');
       }
     } catch (e) {
       console.warn('Session check failed:', e);
+      this.token = null;
+      this.currentUser = null;
+      this.userPermissions = {
+        can_add_url: false,
+        can_edit_url: false,
+        can_delete_url: false,
+        can_toggle_url: false,
+        can_manage_users: false
+      };
+      localStorage.removeItem('pau_noc_session_token');
+      localStorage.removeItem('noc_token');
     }
     this.updateUserUI();
   }
@@ -1480,10 +1496,12 @@ class NOCDashboard {
     const roleIcon = document.getElementById('user-role-icon');
     const rbacBtn = document.getElementById('btn-open-rbac');
     const addBtn = document.getElementById('btn-add-monitor');
+    const headerLoginBtn = document.getElementById('btn-header-login');
 
     const cardAvatar = document.getElementById('auth-card-avatar');
     const cardName = document.getElementById('auth-card-name');
     const cardSub = document.getElementById('auth-card-sub');
+    const logoutBtn = document.getElementById('btn-auth-logout');
 
     if (this.currentUser) {
       const roleIcons = { ADMIN: '🛡️', OPERATOR: '🔧', VIEWER: '👁️' };
@@ -1493,9 +1511,12 @@ class NOCDashboard {
       if (groupEl) groupEl.textContent = `${this.currentUser.groupName} • ${this.currentUser.role}`;
       if (roleIcon) roleIcon.textContent = icon;
 
+      if (headerLoginBtn) headerLoginBtn.classList.add('hidden');
+
       if (cardAvatar) cardAvatar.textContent = icon;
       if (cardName) cardName.textContent = this.currentUser.displayName;
       if (cardSub) cardSub.textContent = `Group: ${this.currentUser.groupName} • Role: ${this.currentUser.role}`;
+      if (logoutBtn) logoutBtn.classList.remove('hidden');
 
       if (rbacBtn) {
         if (this.currentUser.role === 'ADMIN' || this.userPermissions.can_manage_users) {
@@ -1514,16 +1535,20 @@ class NOCDashboard {
         }
       }
     } else {
-      if (nameEl) nameEl.textContent = 'Guest / Unauthenticated';
-      if (groupEl) groupEl.textContent = 'Read-Only Mode';
+      if (nameEl) nameEl.textContent = 'Public View';
+      if (groupEl) groupEl.textContent = 'No Active Profile';
       if (roleIcon) roleIcon.textContent = '🔒';
+
+      if (headerLoginBtn) headerLoginBtn.classList.remove('hidden');
       if (rbacBtn) rbacBtn.classList.add('hidden');
+
       const smtpProfileBtn = document.getElementById('btn-open-smtp-from-profile');
       if (smtpProfileBtn) smtpProfileBtn.classList.add('hidden');
 
       if (cardAvatar) cardAvatar.textContent = '🔒';
-      if (cardName) cardName.textContent = 'Not Logged In';
-      if (cardSub) cardSub.textContent = 'Operating in Guest Read-Only Mode';
+      if (cardName) cardName.textContent = 'Public Visitor / Read-Only';
+      if (cardSub) cardSub.textContent = 'No active user profile. Administrative operations are locked.';
+      if (logoutBtn) logoutBtn.classList.add('hidden');
     }
 
     if (addBtn) {
@@ -1539,7 +1564,7 @@ class NOCDashboard {
         `;
       } else {
         addBtn.classList.add('btn-locked');
-        addBtn.title = 'Locked: Requires Operator or Admin permission to add targets';
+        addBtn.title = 'Locked: Administrator or Operator role required to add targets';
         addBtn.innerHTML = `
           <span style="font-size: 13px;">🔒</span>
           <span>+ NEW TARGET</span>
@@ -1576,14 +1601,6 @@ class NOCDashboard {
     document.getElementById('btn-user-auth')?.addEventListener('click', () => this.openAuthModal());
     document.getElementById('btn-auth-logout')?.addEventListener('click', () => this.logout());
     document.getElementById('btn-open-rbac')?.addEventListener('click', () => this.openRbacModal());
-
-    document.querySelectorAll('.quick-login-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const u = btn.dataset.user;
-        const p = btn.dataset.pass;
-        this.login(u, p);
-      });
-    });
 
     document.getElementById('form-auth-login')?.addEventListener('submit', (e) => {
       e.preventDefault();
@@ -1655,6 +1672,7 @@ class NOCDashboard {
       const data = await res.json();
       if (data.success) {
         this.token = data.token;
+        localStorage.setItem('pau_noc_session_token', this.token);
         localStorage.setItem('noc_token', this.token);
         this.currentUser = data.user;
         this.userPermissions = data.user.permissions;
@@ -1695,10 +1713,11 @@ class NOCDashboard {
       can_toggle_url: false,
       can_manage_users: false
     };
+    localStorage.removeItem('pau_noc_session_token');
     localStorage.removeItem('noc_token');
     this.updateUserUI();
     this.renderMonitors();
-    this.showToast('Logged out. Operating in Guest Read-Only mode.', 'info');
+    this.showToast('Logged out. Operating in Public Read-Only mode.', 'info');
   }
 
   openAuthModal() {

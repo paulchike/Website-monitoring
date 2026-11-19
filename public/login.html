@@ -403,14 +403,14 @@
         <div class="login-form-group">
           <label for="username">Username</label>
           <div class="login-input-wrap">
-            <input type="text" id="username" class="login-input" required autocomplete="username" autofocus />
+            <input type="text" id="username" class="login-input" required autocomplete="username" placeholder="Enter username" autofocus />
           </div>
         </div>
 
         <div class="login-form-group">
           <label for="password">Password</label>
           <div class="login-input-wrap">
-            <input type="password" id="password" class="login-input" required autocomplete="current-password" />
+            <input type="password" id="password" class="login-input" required autocomplete="current-password" placeholder="Enter password" />
             <button type="button" class="toggle-pass-btn" id="btn-toggle-password" title="Toggle password visibility">
               <svg style="width:16px;height:16px;" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"></path>
@@ -418,12 +418,6 @@
               </svg>
             </button>
           </div>
-        </div>
-
-        <!-- Quick Credential Auto-Filler -->
-        <div class="quick-creds-box">
-          <span class="quick-creds-label" id="quick-creds-hint">Fill default Admin credentials</span>
-          <button type="button" class="quick-creds-btn" id="btn-fill-creds">Auto-Fill</button>
         </div>
 
         <button type="submit" class="btn-submit-login" id="btn-submit">
@@ -467,8 +461,6 @@
 
       const usernameInput = document.getElementById('username');
       const passwordInput = document.getElementById('password');
-      const quickCredsHint = document.getElementById('quick-creds-hint');
-      const btnFillCreds = document.getElementById('btn-fill-creds');
       const loginForm = document.getElementById('login-form');
       const loginAlert = document.getElementById('login-alert');
       const btnSubmit = document.getElementById('btn-submit');
@@ -477,6 +469,8 @@
       function setRole(role) {
         currentRole = role;
         loginAlert.classList.add('hidden');
+        usernameInput.value = '';
+        passwordInput.value = '';
 
         if (role === 'ADMIN') {
           tabAdmin.className = 'role-tab-btn active admin-active';
@@ -484,40 +478,23 @@
           portalBadge.className = 'portal-badge badge-admin-portal';
           portalBadgeIcon.textContent = '🛡️';
           portalBadgeText.textContent = 'ADMINISTRATOR GATEWAY';
-          portalSubDesc.textContent = 'Full control: Target management, schema, RBAC policies';
-          quickCredsHint.textContent = 'Fill default Lead Admin credentials (admin / admin123)';
-          if (!usernameInput.value || usernameInput.value === 'operator') {
-            usernameInput.value = 'admin';
-            passwordInput.value = 'admin123';
-          }
+          portalSubDesc.textContent = 'Administrator authentication: Target management, schema, RBAC policies';
+          usernameInput.placeholder = 'Enter administrator username';
+          passwordInput.placeholder = 'Enter administrator password';
         } else {
           tabAdmin.className = 'role-tab-btn';
           tabOperator.className = 'role-tab-btn active operator-active';
           portalBadge.className = 'portal-badge badge-operator-portal';
           portalBadgeIcon.textContent = '🔧';
           portalBadgeText.textContent = 'OPERATIONS GATEWAY';
-          portalSubDesc.textContent = 'Operations team: Add new targets & edit existing URLs';
-          quickCredsHint.textContent = 'Fill default Operator credentials (operator / operator123)';
-          if (!usernameInput.value || usernameInput.value === 'admin') {
-            usernameInput.value = 'operator';
-            passwordInput.value = 'operator123';
-          }
+          portalSubDesc.textContent = 'Operations authentication: Add new targets & edit existing URLs';
+          usernameInput.placeholder = 'Enter operator username';
+          passwordInput.placeholder = 'Enter operator password';
         }
       }
 
       tabAdmin.addEventListener('click', () => setRole('ADMIN'));
       tabOperator.addEventListener('click', () => setRole('OPERATOR'));
-
-      btnFillCreds.addEventListener('click', () => {
-        if (currentRole === 'ADMIN') {
-          usernameInput.value = 'admin';
-          passwordInput.value = 'admin123';
-        } else {
-          usernameInput.value = 'operator';
-          passwordInput.value = 'operator123';
-        }
-        loginAlert.classList.add('hidden');
-      });
 
       // Toggle password
       const btnToggle = document.getElementById('btn-toggle-password');
@@ -526,7 +503,7 @@
         passwordInput.setAttribute('type', type);
       });
 
-      // Initial state
+      // Initial state based on current path
       setRole(currentRole);
 
       // Handle Submit
@@ -549,15 +526,16 @@
           const data = await res.json();
 
           if (data.success && data.token) {
+            localStorage.setItem('pau_noc_session_token', data.token);
             localStorage.setItem('noc_token', data.token);
 
             loginAlert.className = 'login-alert login-alert-success';
-            loginAlert.innerHTML = `✅ <strong>Authenticated!</strong> Welcome ${data.user.displayName}. Redirecting to dashboard...`;
+            loginAlert.innerHTML = `✅ <strong>Authenticated!</strong> Welcome ${data.user.displayName}. Activating profile on dashboard...`;
             loginAlert.classList.remove('hidden');
 
             setTimeout(() => {
               window.location.href = '/';
-            }, 600);
+            }, 500);
           } else {
             loginAlert.className = 'login-alert login-alert-error';
             loginAlert.innerHTML = `⚠️ ${data.error || 'Authentication failed. Please verify credentials.'}`;

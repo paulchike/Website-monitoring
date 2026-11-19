@@ -28,6 +28,19 @@ app.get('/health', (req, res) => {
 // REST API routes
 app.use('/api', apiRoutes);
 
+// Dedicated Staff Login & RBAC Authentication Routes
+const authPortalRoutes = [
+  '/login', '/login/',
+  '/admin', '/admin/',
+  '/admin/login', '/admin/login/',
+  '/operator', '/operator/',
+  '/operator/login', '/operator/login/'
+];
+app.get(authPortalRoutes, (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+  return res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));
+});
+
 // Serve static frontend assets with no-cache in development
 app.use(express.static(path.join(__dirname, '..', 'public'), {
   setHeaders: (res, filePath) => {
@@ -38,13 +51,6 @@ app.use(express.static(path.join(__dirname, '..', 'public'), {
     }
   }
 }));
-
-// Dedicated Staff Login & RBAC Authentication Routes
-const authPortalRoutes = ['/login', '/admin', '/admin/login', '/operator', '/operator/login'];
-app.get(authPortalRoutes, (req, res) => {
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
-  return res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));
-});
 
 // Fallback to index.html for SPA routing
 app.use((req, res, next) => {
