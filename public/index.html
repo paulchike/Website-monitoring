@@ -881,65 +881,123 @@
           </div>
         </div>
 
-        <!-- Tab 4: Microsoft 365 SMTP & Outage Alerts -->
+        <!-- Tab 4: Microsoft 365 App Registration & Outage Alerts -->
         <div id="rbac-pane-notifications" class="rbac-pane hidden">
-          <div class="smtp-banner" style="background: rgba(14, 165, 233, 0.08); border: 1px solid rgba(14, 165, 233, 0.3); border-radius: 8px; padding: 14px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px;">
-            <div style="display: flex; align-items: center; gap: 10px;">
-              <span style="font-size: 26px;">📧</span>
+          <div class="smtp-banner" style="background: linear-gradient(135deg, rgba(37, 99, 235, 0.12) 0%, rgba(14, 165, 233, 0.08) 100%); border: 1px solid rgba(56, 189, 248, 0.35); border-radius: 8px; padding: 16px; margin-bottom: 18px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px;">
+            <div style="display: flex; align-items: center; gap: 12px;">
+              <span style="font-size: 28px;">☁️</span>
               <div>
-                <strong style="color: #38bdf8; font-size: 13.5px; display: block;">Microsoft 365 / Office SMTP Relay Configuration</strong>
-                <span style="font-size: 11px; color: #94a3b8;">Automated email alert dispatch on target outage and service resolution</span>
+                <strong style="color: #38bdf8; font-size: 14px; display: block; letter-spacing: 0.3px;">Microsoft 365 / Entra ID App Registration</strong>
+                <span style="font-size: 11.5px; color: #94a3b8;">OAuth 2.0 Client Credentials Grant & Microsoft Graph API (HTTPS port 443). Eliminates basic SMTP blocks.</span>
               </div>
             </div>
-            <button type="button" class="btn btn-secondary btn-sm" id="btn-preset-ms365" style="border-color: rgba(14, 165, 233, 0.5); color: #7dd3fc; font-weight: 600;">
-              ⚡ Set Microsoft 365 Defaults
-            </button>
+            <div style="display: flex; gap: 8px; align-items: center;">
+              <select id="delivery-method" class="noc-select" style="font-size: 11px; padding: 5px 8px; border-color: rgba(56, 189, 248, 0.4); background: #0f172a; color: #7dd3fc; font-weight: 600;">
+                <option value="app_registration" selected>⚡ Microsoft App Registration (Graph API)</option>
+                <option value="smtp">✉️ Legacy SMTP Relay (Basic Auth)</option>
+              </select>
+            </div>
+          </div>
+
+          <!-- Entra ID Setup Assistance Card -->
+          <div id="entra-guide-box" style="background: rgba(30, 41, 59, 0.6); border: 1px dashed rgba(56, 189, 248, 0.3); border-radius: 8px; padding: 12px 16px; margin-bottom: 18px; font-size: 11.5px; color: #cbd5e1; line-height: 1.6;">
+            <div style="font-weight: 700; color: #7dd3fc; margin-bottom: 6px; display: flex; align-items: center; gap: 6px;">
+              <span>🔑</span>
+              <span>HOW TO CONFIGURE MICROSOFT ENTRA ID (AZURE AD)</span>
+            </div>
+            <ol style="margin: 0; padding-left: 18px; color: #94a3b8;">
+              <li>Go to <strong style="color: #f1f5f9;">Microsoft Entra admin center</strong> (<a href="https://entra.microsoft.com" target="_blank" rel="noopener" style="color: #38bdf8;">entra.microsoft.com</a>) &rarr; <strong style="color: #f1f5f9;">App registrations</strong> &rarr; <strong style="color: #f1f5f9;">New registration</strong> (e.g. <em>PAU NOC Monitor</em>).</li>
+              <li>Under <strong style="color: #f1f5f9;">API permissions</strong>, click <strong style="color: #f1f5f9;">Add a permission</strong> &rarr; <strong style="color: #f1f5f9;">Microsoft Graph</strong> &rarr; <strong style="color: #f1f5f9;">Application permissions</strong> &rarr; select <strong style="color: #34d399;">Mail.Send</strong> &rarr; click <strong style="color: #38bdf8;">Grant admin consent</strong>.</li>
+              <li>Under <strong style="color: #f1f5f9;">Certificates &amp; secrets</strong>, generate a <strong style="color: #f1f5f9;">New client secret</strong> and copy the <strong style="color: #fbbf24;">Value</strong>.</li>
+              <li>Copy the <strong style="color: #f1f5f9;">Directory (tenant) ID</strong> and <strong style="color: #f1f5f9;">Application (client) ID</strong> from Overview into the fields below.</li>
+            </ol>
           </div>
 
           <form id="form-smtp-settings">
-            <!-- Row 1: System Switch & Gateway Host -->
-            <div class="form-row">
-              <div class="form-group flex-1" style="display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 10px;">
-                <label class="checkbox-label" for="smtp-enabled-chk" style="margin: 0; cursor: pointer;">
-                  <input type="checkbox" id="smtp-enabled-chk" />
-                  <span style="font-weight: 700; color: #34d399;">Enable Outgoing Email System</span>
-                </label>
+            <!-- Row: System Switch -->
+            <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 6px; padding: 12px 16px; margin-bottom: 16px; display: flex; align-items: center; justify-content: space-between;">
+              <label class="checkbox-label" for="email-enabled-chk" style="margin: 0; cursor: pointer;">
+                <input type="checkbox" id="email-enabled-chk" checked />
+                <span style="font-weight: 700; color: #34d399; font-size: 12.5px;">Enable Outgoing Automated Email Alerts</span>
+              </label>
+              <!-- Hidden backward compatible element -->
+              <input type="checkbox" id="smtp-enabled-chk" style="display:none;" />
+              <span style="font-size: 11px; color: #64748b;">Active dispatch via HTTPS Port 443</span>
+            </div>
+
+            <!-- Section 1: Microsoft 365 App Registration Fields -->
+            <div id="section-app-registration">
+              <div class="form-row">
+                <div class="form-group flex-2">
+                  <label for="ms-tenant-id">Directory (Tenant) ID *</label>
+                  <input type="text" id="ms-tenant-id" placeholder="e.g. 72f988bf-86f1-41af-91ab-2d7cd011db47 or pau.edu.ng" style="font-family: var(--font-mono); font-size: 12px;" />
+                  <span style="font-size: 10px; color: #64748b;">From Entra ID App Overview (Tenant GUID or Primary Domain)</span>
+                </div>
+                <div class="form-group flex-2">
+                  <label for="ms-client-id">Application (Client) ID *</label>
+                  <input type="text" id="ms-client-id" placeholder="e.g. 11111111-2222-3333-4444-555555555555" style="font-family: var(--font-mono); font-size: 12px;" />
+                  <span style="font-size: 10px; color: #64748b;">The unique Application GUID created in Microsoft Entra</span>
+                </div>
               </div>
-              <div class="form-group flex-2">
-                <label for="smtp-host">SMTP Relay Host *</label>
-                <input type="text" id="smtp-host" required value="smtp.office365.com" placeholder="smtp.office365.com" />
-              </div>
-              <div class="form-group flex-1">
-                <label for="smtp-port">Port</label>
-                <input type="number" id="smtp-port" required value="587" />
-              </div>
-              <div class="form-group flex-1">
-                <label for="smtp-secure">Encryption</label>
-                <select id="smtp-secure" class="noc-select">
-                  <option value="0" selected>STARTTLS (Port 587)</option>
-                  <option value="1">SSL/TLS (Port 465)</option>
-                </select>
+
+              <div class="form-row">
+                <div class="form-group flex-2">
+                  <label for="ms-client-secret">Client Secret Value *</label>
+                  <input type="password" id="ms-client-secret" placeholder="•••••••• (Enter secret to update)" style="font-family: var(--font-mono); font-size: 12px;" />
+                  <span id="ms-secret-status" style="font-size: 10px; color: #94a3b8; margin-top: 2px; display: block;"></span>
+                </div>
+                <div class="form-group flex-2">
+                  <label for="ms-sender-email">Sender Mailbox Address *</label>
+                  <input type="email" id="ms-sender-email" placeholder="e.g. alerts@pau.edu.ng or noc@pau.edu.ng" style="font-family: var(--font-mono); font-size: 12px;" />
+                  <span style="font-size: 10px; color: #64748b;">A licensed Microsoft 365 mailbox used to send outgoing emails</span>
+                </div>
+                <div class="form-group flex-1">
+                  <label for="ms-from-name">Sender Display Name</label>
+                  <input type="text" id="ms-from-name" value="PAU NOC Radar Alerts" placeholder="e.g. PAU NOC Alerts" />
+                </div>
               </div>
             </div>
 
-            <!-- Row 2: Microsoft Account Credentials -->
-            <div class="form-row">
-              <div class="form-group flex-2">
-                <label for="smtp-user">Microsoft 365 Username / Mailbox *</label>
-                <input type="email" id="smtp-user" required placeholder="alerts@pau.edu.ng or user@domain.com" />
+            <!-- Section 2: Legacy SMTP Fallback (Hidden by default unless switched) -->
+            <div id="section-legacy-smtp" class="hidden" style="background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.06); border-radius: 8px; padding: 14px; margin-bottom: 16px;">
+              <div style="font-size: 11px; font-weight: 700; color: #fbbf24; margin-bottom: 10px;">
+                ⚠️ LEGACY BASIC SMTP RELAY (smtp.office365.com)
               </div>
-              <div class="form-group flex-2">
-                <label for="smtp-pass">Password / App Password *</label>
-                <input type="password" id="smtp-pass" placeholder="•••••••• (Enter new password to update)" />
-                <span id="smtp-pass-status" style="font-size: 10px; color: #94a3b8; margin-top: 2px; display: block;"></span>
+              <div class="form-row">
+                <div class="form-group flex-2">
+                  <label for="smtp-host">SMTP Relay Host</label>
+                  <input type="text" id="smtp-host" value="smtp.office365.com" placeholder="smtp.office365.com" />
+                </div>
+                <div class="form-group flex-1">
+                  <label for="smtp-port">Port</label>
+                  <input type="number" id="smtp-port" value="587" />
+                </div>
+                <div class="form-group flex-1">
+                  <label for="smtp-secure">Encryption</label>
+                  <select id="smtp-secure" class="noc-select">
+                    <option value="0" selected>STARTTLS (Port 587)</option>
+                    <option value="1">SSL/TLS (Port 465)</option>
+                  </select>
+                </div>
               </div>
-              <div class="form-group flex-2">
-                <label for="smtp-from-name">Sender Display Name</label>
-                <input type="text" id="smtp-from-name" value="PAU NOC Radar Alerts" placeholder="e.g. PAU NOC Alerts" />
+              <div class="form-row">
+                <div class="form-group flex-2">
+                  <label for="smtp-user">Microsoft 365 Username / Email</label>
+                  <input type="email" id="smtp-user" placeholder="user@domain.com" />
+                </div>
+                <div class="form-group flex-2">
+                  <label for="smtp-pass">Account Password</label>
+                  <input type="password" id="smtp-pass" placeholder="•••••••• (Enter new password to update)" />
+                  <span id="smtp-pass-status" style="font-size: 10px; color: #94a3b8; margin-top: 2px; display: block;"></span>
+                </div>
+                <div class="form-group flex-2">
+                  <label for="smtp-from-name">SMTP Display Name</label>
+                  <input type="text" id="smtp-from-name" value="PAU NOC Radar Alerts" />
+                </div>
               </div>
             </div>
 
-            <!-- Row 3: Service Outage Trigger Notification & Recipient Provision -->
+            <!-- Row: Service Outage Trigger Notification & Recipient Provision -->
             <div style="background: rgba(239, 68, 68, 0.06); border: 1px solid rgba(239, 68, 68, 0.3); border-radius: 8px; padding: 16px; margin: 18px 0;">
               <div style="font-size: 12px; font-weight: 700; color: #f87171; margin-bottom: 12px; display: flex; align-items: center; gap: 6px;">
                 <span>🚨</span>
@@ -983,7 +1041,7 @@
               </div>
 
               <button type="submit" class="btn btn-primary" id="btn-save-smtp">
-                💾 Save Notification Settings
+                💾 Save App Registration Settings
               </button>
             </div>
           </form>

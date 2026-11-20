@@ -245,7 +245,7 @@ router.get('/auth/audit-logs', requireAuth, (req, res) => {
 });
 
 /* ========================================================================
-   Notification & Microsoft SMTP Settings (Admin & Operator Accessible)
+   Notification & Microsoft App Registration Settings (Admin & Operator)
    ======================================================================== */
 
 // GET /api/notifications/settings
@@ -253,10 +253,20 @@ router.get('/notifications/settings', requireAuth, requirePermission('can_edit_u
   try {
     const raw = notifier.getNotificationSettings();
     const hasPassword = Boolean(raw.smtp_pass && raw.smtp_pass.length > 0);
+    const hasClientSecret = Boolean(raw.ms_client_secret && raw.ms_client_secret.length > 0);
 
     res.json({
       success: true,
       settings: {
+        email_enabled: raw.email_enabled === '1' || raw.smtp_enabled === '1',
+        delivery_method: raw.delivery_method || 'app_registration',
+        // Microsoft 365 App Registration (Graph API)
+        ms_tenant_id: raw.ms_tenant_id || '',
+        ms_client_id: raw.ms_client_id || '',
+        has_client_secret: hasClientSecret,
+        ms_sender_email: raw.ms_sender_email || '',
+        ms_from_name: raw.ms_from_name || 'PAU NOC Radar Alerts',
+        // Classic SMTP (preserved for fallback)
         smtp_enabled: raw.smtp_enabled === '1',
         smtp_host: raw.smtp_host || 'smtp.office365.com',
         smtp_port: Number(raw.smtp_port) || 587,
@@ -265,6 +275,7 @@ router.get('/notifications/settings', requireAuth, requirePermission('can_edit_u
         has_password: hasPassword,
         smtp_from_email: raw.smtp_from_email || '',
         smtp_from_name: raw.smtp_from_name || 'PAU NOC Radar Alerts',
+        // Outage notifications
         notify_outage_enabled: raw.notify_outage_enabled !== '0',
         notify_recovery_enabled: raw.notify_recovery_enabled !== '0',
         notify_recipients: raw.notify_recipients || ''
@@ -279,6 +290,15 @@ router.get('/notifications/settings', requireAuth, requirePermission('can_edit_u
 router.post('/notifications/settings', requireAuth, requirePermission('can_edit_url'), (req, res) => {
   try {
     const {
+      email_enabled,
+      delivery_method = 'app_registration',
+      // Microsoft 365 App Registration
+      ms_tenant_id = '',
+      ms_client_id = '',
+      ms_client_secret = null,
+      ms_sender_email = '',
+      ms_from_name = 'PAU NOC Radar Alerts',
+      // Classic SMTP fallback
       smtp_enabled,
       smtp_host = 'smtp.office365.com',
       smtp_port = 587,
@@ -287,42 +307,80 @@ router.post('/notifications/settings', requireAuth, requirePermission('can_edit_
       smtp_pass = null,
       smtp_from_email = '',
       smtp_from_name = 'PAU NOC Radar Alerts',
+      // Outage notifications
       notify_outage_enabled = true,
       notify_recovery_enabled = true,
       notify_recipients = ''
     } = req.body;
 
-    queries.setSetting.run('smtp_enabled', smtp_enabled ? '1' : '0');
+    // Enable state & delivery method
+    queries.setSetting.run('email_enabled', email_enabled ? '1' : '0');
+    queries.setSetting.run('delivery_method', delivery_method || 'app_registration');
+
+    // Microsoft Entra ID App Registration
+    queries.setSetting.run('ms_tenant_id', (ms_tenant_id || '').trim());
+    queries.setSetting.run('ms_client_id', (ms_client_id || '').trim());
+    queries.setSetting.run('ms_sender_email', (ms_sender_email || '').trim());
+    queries.setSetting.run('ms_from_name', (ms_from_name || 'PAU NOC Radar Alerts').trim());
+
+    if (ms_client_secret !== null && ms_client_secret !== undefined && ms_client_secret !== '••••••••' && ms_client_secret.trim().length > 0) {
+      queries.setSetting.run('ms_client_secret', ms_client_secret.trim());
+    }
+
+    // Classic SMTP (fallback / alternative)
+    queries.setSetting.run('smtp_enabled', (smtp_enabled !== undefined ? smtp_enabled : email_enabled) ? '1' : '0');
     queries.setSetting.run('smtp_host', (smtp_host || 'smtp.office365.com').trim());
     queries.setSetting.run('smtp_port', String(smtp_port || 587));
     queries.setSetting.run('smtp_secure', smtp_secure ? '1' : '0');
     queries.setSetting.run('smtp_user', (smtp_user || '').trim());
-    queries.setSetting.run('smtp_from_email', (smtp_from_email || smtp_user || '').trim());
-    queries.setSetting.run('smtp_from_name', (smtp_from_name || 'PAU NOC Alerts').trim());
-    queries.setSetting.run('notify_outage_enabled', notify_outage_enabled ? '1' : '0');
-    queries.setSetting.run('notify_recovery_enabled', notify_recovery_enabled ? '1' : '0');
-    queries.setSetting.run('notify_recipients', (notify_recipients || '').trim());
+    queries.setSetting.run('smtp_from_email', (smtp_from_email || smtp_user || ms_sender_email || '').trim());
+    queries.setSetting.run('smtp_from_name', (smtp_from_name || ms_from_name || 'PAU NOC Radar Alerts').trim());
 
-    // Only update password if a new one was provided
     if (smtp_pass !== null && smtp_pass !== undefined && smtp_pass !== '••••••••' && smtp_pass.length > 0) {
       queries.setSetting.run('smtp_pass', smtp_pass);
     }
 
-    logAudit(req, 'UPDATE_SMTP_SETTINGS', null, `Updated Microsoft 365 SMTP & Outage alert recipients: ${notify_recipients}`);
+    // Outage triggers & recipients
+    queries.setSetting.run('notify_outage_enabled', notify_outage_enabled ? '1' : '0');
+    queries.setSetting.run('notify_recovery_enabled', notify_recovery_enabled ? '1' : '0');
+    queries.setSetting.run('notify_recipients', (notify_recipients || '').trim());
 
-    res.json({ success: true, message: 'Notification & Microsoft SMTP settings saved successfully' });
+    logAudit(req, 'UPDATE_NOTIFICATION_SETTINGS', null, `Updated Microsoft App Registration & Outage alert recipients: ${notify_recipients}`);
+
+    res.json({ success: true, message: 'Notification & Microsoft 365 App Registration settings saved successfully' });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
   }
 });
 
-// POST /api/notifications/test (Send test email via Microsoft SMTP)
+// POST /api/notifications/test (Send test email via Microsoft App Registration Graph API or SMTP)
 router.post('/notifications/test', requireAuth, requirePermission('can_edit_url'), async (req, res) => {
   try {
-    const { test_email, smtp_host, smtp_port, smtp_secure, smtp_user, smtp_pass, smtp_from_email, smtp_from_name } = req.body;
+    const {
+      test_email,
+      delivery_method,
+      ms_tenant_id,
+      ms_client_id,
+      ms_client_secret,
+      ms_sender_email,
+      ms_from_name,
+      smtp_host,
+      smtp_port,
+      smtp_secure,
+      smtp_user,
+      smtp_pass,
+      smtp_from_email,
+      smtp_from_name
+    } = req.body;
 
     const current = notifier.getNotificationSettings();
     const configToTest = {
+      delivery_method: delivery_method || current.delivery_method || 'app_registration',
+      ms_tenant_id: ms_tenant_id !== undefined ? ms_tenant_id : current.ms_tenant_id,
+      ms_client_id: ms_client_id !== undefined ? ms_client_id : current.ms_client_id,
+      ms_client_secret: (ms_client_secret && ms_client_secret !== '••••••••') ? ms_client_secret : current.ms_client_secret,
+      ms_sender_email: ms_sender_email !== undefined ? ms_sender_email : current.ms_sender_email,
+      ms_from_name: ms_from_name || current.ms_from_name,
       smtp_host: smtp_host || current.smtp_host,
       smtp_port: smtp_port || current.smtp_port,
       smtp_secure: smtp_secure !== undefined ? (smtp_secure ? '1' : '0') : current.smtp_secure,
@@ -334,16 +392,16 @@ router.post('/notifications/test', requireAuth, requirePermission('can_edit_url'
     };
 
     const result = await notifier.sendTestEmail(configToTest, test_email);
-    logAudit(req, 'SEND_TEST_EMAIL', null, `Dispatched test email to ${result.recipient}`);
+    logAudit(req, 'SEND_TEST_EMAIL', null, `Dispatched test email to ${result.recipient} via ${result.method}`);
 
     res.json({
       success: true,
-      message: `Test email successfully dispatched to ${result.recipient} via ${configToTest.smtp_host}`
+      message: `Test email successfully dispatched to ${result.recipient} via ${result.method}!`
     });
   } catch (err) {
     res.status(400).json({
       success: false,
-      error: `SMTP Error: ${err.message}`
+      error: `Notification Error: ${err.message}`
     });
   }
 });

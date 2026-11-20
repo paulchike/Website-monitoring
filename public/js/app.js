@@ -1671,13 +1671,11 @@ class NOCDashboard {
       });
     });
 
-    // Preset Microsoft 365
-    document.getElementById('btn-preset-ms365')?.addEventListener('click', () => {
-      document.getElementById('smtp-host').value = 'smtp.office365.com';
-      document.getElementById('smtp-port').value = '587';
-      document.getElementById('smtp-secure').value = '0';
-      document.getElementById('smtp-from-name').value = 'PAU NOC Radar Alerts';
-      this.showToast('Applied Microsoft 365 default relay configuration (smtp.office365.com:587 STARTTLS)', 'info');
+    // Delivery Method Switcher (App Registration vs Legacy SMTP)
+    document.getElementById('delivery-method')?.addEventListener('change', (e) => {
+      const isAppReg = e.target.value === 'app_registration';
+      document.getElementById('section-app-registration')?.classList.toggle('hidden', !isAppReg);
+      document.getElementById('section-legacy-smtp')?.classList.toggle('hidden', isAppReg);
     });
 
     // Notification form submit
@@ -1929,7 +1927,7 @@ class NOCDashboard {
   }
 
   /* ========================================================================
-     Notification & Microsoft SMTP Settings (Admin Only)
+     Notification & Microsoft App Registration Settings (Admin Only)
      ======================================================================== */
   async loadNotificationSettings() {
     try {
@@ -1938,38 +1936,77 @@ class NOCDashboard {
       if (!data.success) return;
 
       const s = data.settings;
-      const enabledChk = document.getElementById('smtp-enabled-chk');
+      const emailEnabledChk = document.getElementById('email-enabled-chk');
+      const smtpEnabledChk = document.getElementById('smtp-enabled-chk');
+      const deliveryMethod = document.getElementById('delivery-method');
+
+      // App Registration inputs
+      const tenantInput = document.getElementById('ms-tenant-id');
+      const clientInput = document.getElementById('ms-client-id');
+      const secretInput = document.getElementById('ms-client-secret');
+      const secretStatus = document.getElementById('ms-secret-status');
+      const senderInput = document.getElementById('ms-sender-email');
+      const msFromNameInput = document.getElementById('ms-from-name');
+
+      // Legacy SMTP inputs
       const hostInput = document.getElementById('smtp-host');
       const portInput = document.getElementById('smtp-port');
       const secureSelect = document.getElementById('smtp-secure');
       const userInput = document.getElementById('smtp-user');
       const passInput = document.getElementById('smtp-pass');
       const passStatus = document.getElementById('smtp-pass-status');
-      const fromNameInput = document.getElementById('smtp-from-name');
+      const smtpFromNameInput = document.getElementById('smtp-from-name');
+
+      // Alert triggers and recipients
       const outageChk = document.getElementById('notify-outage-chk');
       const recoveryChk = document.getElementById('notify-recovery-chk');
       const recipientsInput = document.getElementById('notify-recipients');
 
-      if (enabledChk) enabledChk.checked = Boolean(s.smtp_enabled);
+      if (emailEnabledChk) emailEnabledChk.checked = Boolean(s.email_enabled);
+      if (smtpEnabledChk) smtpEnabledChk.checked = Boolean(s.email_enabled);
+
+      const method = s.delivery_method || 'app_registration';
+      if (deliveryMethod) deliveryMethod.value = method;
+      const isAppReg = method === 'app_registration';
+      document.getElementById('section-app-registration')?.classList.toggle('hidden', !isAppReg);
+      document.getElementById('section-legacy-smtp')?.classList.toggle('hidden', isAppReg);
+
+      if (tenantInput) tenantInput.value = s.ms_tenant_id || '';
+      if (clientInput) clientInput.value = s.ms_client_id || '';
+      if (senderInput) senderInput.value = s.ms_sender_email || s.smtp_user || '';
+      if (msFromNameInput) msFromNameInput.value = s.ms_from_name || 'PAU NOC Radar Alerts';
+
+      if (secretStatus) {
+        if (s.has_client_secret) {
+          secretStatus.textContent = '🔒 Client secret stored securely. Enter a new value only to rotate/replace.';
+          secretStatus.style.color = '#34d399';
+          if (secretInput) secretInput.value = '';
+        } else {
+          secretStatus.textContent = '⚠️ No client secret configured yet.';
+          secretStatus.style.color = '#f59e0b';
+        }
+      }
+
+      // Legacy SMTP inputs
       if (hostInput) hostInput.value = s.smtp_host || 'smtp.office365.com';
       if (portInput) portInput.value = s.smtp_port || 587;
       if (secureSelect) secureSelect.value = s.smtp_secure ? '1' : '0';
       if (userInput) userInput.value = s.smtp_user || '';
-      if (fromNameInput) fromNameInput.value = s.smtp_from_name || 'PAU NOC Radar Alerts';
-      if (outageChk) outageChk.checked = Boolean(s.notify_outage_enabled);
-      if (recoveryChk) recoveryChk.checked = Boolean(s.notify_recovery_enabled);
-      if (recipientsInput) recipientsInput.value = s.notify_recipients || '';
-
+      if (smtpFromNameInput) smtpFromNameInput.value = s.smtp_from_name || 'PAU NOC Radar Alerts';
       if (passStatus) {
         if (s.has_password) {
-          passStatus.textContent = '🔒 Password configured and encrypted in SQLite. Enter a new password only to change it.';
+          passStatus.textContent = '🔒 Password configured in SQLite. Enter new password only to change.';
           passStatus.style.color = '#34d399';
           if (passInput) passInput.value = '';
         } else {
-          passStatus.textContent = '⚠️ No password configured yet.';
+          passStatus.textContent = '⚠️ No password configured.';
           passStatus.style.color = '#f59e0b';
         }
       }
+
+      if (outageChk) outageChk.checked = Boolean(s.notify_outage_enabled);
+      if (recoveryChk) recoveryChk.checked = Boolean(s.notify_recovery_enabled);
+      if (recipientsInput) recipientsInput.value = s.notify_recipients || '';
     } catch (e) {
       console.error('Failed to load notification settings:', e);
     }
@@ -1980,17 +2017,34 @@ class NOCDashboard {
     const btn = document.getElementById('btn-save-smtp');
     if (btn) btn.disabled = true;
 
+    const deliveryMethod = document.getElementById('delivery-method')?.value || 'app_registration';
+    const emailEnabled = Boolean(document.getElementById('email-enabled-chk')?.checked);
+
     const payload = {
-      smtp_enabled: document.getElementById('smtp-enabled-chk')?.checked || false,
+      email_enabled: emailEnabled,
+      delivery_method: deliveryMethod,
+      // Microsoft App Registration
+      ms_tenant_id: document.getElementById('ms-tenant-id')?.value.trim() || '',
+      ms_client_id: document.getElementById('ms-client-id')?.value.trim() || '',
+      ms_sender_email: document.getElementById('ms-sender-email')?.value.trim() || '',
+      ms_from_name: document.getElementById('ms-from-name')?.value.trim() || 'PAU NOC Radar Alerts',
+      // Legacy SMTP
+      smtp_enabled: emailEnabled,
       smtp_host: document.getElementById('smtp-host')?.value.trim() || 'smtp.office365.com',
       smtp_port: Number(document.getElementById('smtp-port')?.value) || 587,
       smtp_secure: document.getElementById('smtp-secure')?.value === '1',
       smtp_user: document.getElementById('smtp-user')?.value.trim() || '',
       smtp_from_name: document.getElementById('smtp-from-name')?.value.trim() || 'PAU NOC Radar Alerts',
-      notify_outage_enabled: document.getElementById('notify-outage-chk')?.checked || false,
-      notify_recovery_enabled: document.getElementById('notify-recovery-chk')?.checked || false,
+      // Outage notifications
+      notify_outage_enabled: Boolean(document.getElementById('notify-outage-chk')?.checked),
+      notify_recovery_enabled: Boolean(document.getElementById('notify-recovery-chk')?.checked),
       notify_recipients: document.getElementById('notify-recipients')?.value.trim() || ''
     };
+
+    const secret = document.getElementById('ms-client-secret')?.value;
+    if (secret && secret.trim().length > 0) {
+      payload.ms_client_secret = secret.trim();
+    }
 
     const pass = document.getElementById('smtp-pass')?.value;
     if (pass && pass.trim().length > 0) {
@@ -2004,7 +2058,7 @@ class NOCDashboard {
       });
       const data = await res.json();
       if (data.success) {
-        this.showToast('✅ Microsoft SMTP & Outage notification settings saved!', 'success');
+        this.showToast('✅ Microsoft 365 App Registration & Alert settings saved!', 'success');
         this.loadNotificationSettings();
       } else {
         this.showToast(`Error: ${data.error || 'Failed to save notification settings'}`, 'error');
@@ -2022,12 +2076,12 @@ class NOCDashboard {
 
     if (!target) {
       const recipients = document.getElementById('notify-recipients')?.value.trim();
-      const user = document.getElementById('smtp-user')?.value.trim();
-      target = (recipients ? recipients.split(',')[0].trim() : '') || user;
+      const sender = document.getElementById('ms-sender-email')?.value.trim() || document.getElementById('smtp-user')?.value.trim();
+      target = (recipients ? recipients.split(',')[0].trim() : '') || sender;
     }
 
     if (!target) {
-      this.showToast('Please enter an email address to receive the test email.', 'error');
+      this.showToast('Please enter an email address to receive the test verification email.', 'error');
       testTargetInput?.focus();
       return;
     }
@@ -2038,8 +2092,15 @@ class NOCDashboard {
       btn.textContent = 'Connecting...';
     }
 
+    const deliveryMethod = document.getElementById('delivery-method')?.value || 'app_registration';
+
     const currentForm = {
       test_email: target,
+      delivery_method: deliveryMethod,
+      ms_tenant_id: document.getElementById('ms-tenant-id')?.value.trim(),
+      ms_client_id: document.getElementById('ms-client-id')?.value.trim(),
+      ms_sender_email: document.getElementById('ms-sender-email')?.value.trim(),
+      ms_from_name: document.getElementById('ms-from-name')?.value.trim(),
       smtp_host: document.getElementById('smtp-host')?.value.trim(),
       smtp_port: Number(document.getElementById('smtp-port')?.value),
       smtp_secure: document.getElementById('smtp-secure')?.value === '1',
@@ -2047,13 +2108,19 @@ class NOCDashboard {
       smtp_from_name: document.getElementById('smtp-from-name')?.value.trim()
     };
 
+    const secret = document.getElementById('ms-client-secret')?.value;
+    if (secret && secret.length > 0) {
+      currentForm.ms_client_secret = secret.trim();
+    }
+
     const pass = document.getElementById('smtp-pass')?.value;
     if (pass && pass.length > 0) {
       currentForm.smtp_pass = pass;
     }
 
     try {
-      this.showToast(`Testing Microsoft SMTP relay to ${target}...`, 'info');
+      const methodLabel = deliveryMethod === 'app_registration' ? 'Microsoft Graph API (App Registration)' : 'SMTP Relay';
+      this.showToast(`Testing dispatch to ${target} via ${methodLabel}...`, 'info');
       const res = await this.authFetch('/api/notifications/test', {
         method: 'POST',
         body: JSON.stringify(currentForm)
