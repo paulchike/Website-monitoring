@@ -29,17 +29,136 @@ class NOCDashboard {
       can_manage_users: false
     };
 
+    // Auto-Refresh 10-Minute Feature (600 seconds)
+    this.autoRefreshInterval = 10 * 60; // 600 seconds
+    this.autoRefreshRemaining = this.autoRefreshInterval;
+    this.autoRefreshTimer = null;
+    this.autoRefreshPaused = localStorage.getItem('noc_auto_refresh_paused') === 'true';
+
     this.init();
   }
 
   init() {
     this.initClock();
+    this.initAutoRefresh();
     this.initSound();
     this.initEventListeners();
     this.initAuth();
     this.initWebSocket();
     this.setView(this.currentView);
     this.fetchInitialSummary();
+  }
+
+  /* ========================================================================
+     Auto-Refresh Controller (Every 10 Minutes)
+     ======================================================================== */
+  initAutoRefresh() {
+    this.updateAutoRefreshUI();
+
+    const btnRefresh = document.getElementById('btn-refresh-now');
+    if (btnRefresh) {
+      btnRefresh.addEventListener('click', () => {
+        this.triggerManualRefresh();
+      });
+    }
+
+    const btnPause = document.getElementById('btn-auto-refresh-pause');
+    if (btnPause) {
+      btnPause.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.toggleAutoRefreshPause();
+      });
+    }
+
+    // Tick every second to update countdown display
+    this.autoRefreshTimer = setInterval(() => {
+      this.tickAutoRefresh();
+    }, 1000);
+  }
+
+  tickAutoRefresh() {
+    if (this.autoRefreshPaused) return;
+
+    this.autoRefreshRemaining--;
+
+    if (this.autoRefreshRemaining <= 0) {
+      this.executeAutoRefresh();
+    } else {
+      this.updateAutoRefreshUI();
+    }
+  }
+
+  updateAutoRefreshUI() {
+    const timerEl = document.getElementById('auto-refresh-countdown');
+    const pauseIcon = document.getElementById('auto-refresh-pause-icon');
+    const widgetEl = document.getElementById('auto-refresh-widget');
+
+    if (this.autoRefreshPaused) {
+      if (timerEl) timerEl.textContent = 'PAUSED';
+      if (pauseIcon) pauseIcon.textContent = '▶';
+      if (widgetEl) {
+        widgetEl.classList.add('paused');
+        widgetEl.title = '10-minute auto-refresh is paused. Click ▶ to resume.';
+      }
+      return;
+    }
+
+    if (widgetEl) {
+      widgetEl.classList.remove('paused');
+      widgetEl.title = `Landing page auto-refreshes every 10 minutes (${this.formatRefreshTime(this.autoRefreshRemaining)} remaining). Click to refresh now.`;
+    }
+    if (pauseIcon) pauseIcon.textContent = '⏸';
+
+    if (timerEl) {
+      timerEl.textContent = this.formatRefreshTime(this.autoRefreshRemaining);
+    }
+  }
+
+  formatRefreshTime(totalSeconds) {
+    if (totalSeconds < 0) totalSeconds = 0;
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${String(mins).padStart(2, '0')}:${String(secs).padStart(2, '0')}`;
+  }
+
+  toggleAutoRefreshPause() {
+    this.autoRefreshPaused = !this.autoRefreshPaused;
+    localStorage.setItem('noc_auto_refresh_paused', this.autoRefreshPaused);
+    this.updateAutoRefreshUI();
+    this.showToast(this.autoRefreshPaused ? '⏸ Auto-refresh paused' : '▶ Auto-refresh resumed (every 10m)', 'info');
+  }
+
+  triggerManualRefresh() {
+    const timerEl = document.getElementById('auto-refresh-countdown');
+    if (timerEl) timerEl.textContent = 'RELOADING...';
+    const icon = document.querySelector('.refresh-icon');
+    if (icon) icon.classList.add('spin-fast');
+    this.showToast('🔄 Refreshing landing page telemetry...', 'info');
+
+    setTimeout(() => {
+      window.location.reload();
+    }, 250);
+  }
+
+  executeAutoRefresh() {
+    // If a modal dialog is currently open (e.g. user adding/editing a monitor or configuring RBAC),
+    // do not abruptly wipe their form; update telemetry in place and reset timer.
+    const openDialog = document.querySelector('dialog[open]');
+    if (openDialog) {
+      console.log('[Auto-Refresh] Active modal open; updating background telemetry and postponing hard reload.');
+      this.fetchMonitorsList();
+      this.autoRefreshRemaining = this.autoRefreshInterval;
+      this.updateAutoRefreshUI();
+      return;
+    }
+
+    console.log('[Auto-Refresh] 10 minutes elapsed. Reloading landing page.');
+    const timerEl = document.getElementById('auto-refresh-countdown');
+    if (timerEl) timerEl.textContent = 'REFRESHING...';
+    const icon = document.querySelector('.refresh-icon');
+    if (icon) icon.classList.add('spin-fast');
+
+    window.location.reload();
   }
 
   /* ========================================================================
