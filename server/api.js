@@ -955,5 +955,29 @@ router.get('/mock/dberror', (req, res) => {
   res.status(200).send('<!DOCTYPE html><html><body><h1>Error establishing a database connection</h1><p>Cannot connect to the database server: SQLSTATE[HY000] [2002] Connection refused</p></body></html>');
 });
 
+router.get('/mock/520', (req, res) => {
+  // Simulates Cloudflare Error 520: Web server is returning an unknown error
+  res.status(520).send(`<!DOCTYPE html>
+<html>
+<head><title>Web server is returning an unknown error | Error 520</title></head>
+<body>
+  <h1>Web server is returning an unknown error</h1>
+  <p>There is an unknown error on the origin web server. Error code 520</p>
+</body>
+</html>`);
+});
+
+router.get('/mock/503-520', (req, res) => {
+  // Simulates HTTP 503 returning Web server is returning an unknown error Error code 520
+  res.status(503).send(`<!DOCTYPE html>
+<html>
+<head><title>503 Service Unavailable | Error 520</title></head>
+<body>
+  <h1>Web server is returning an unknown error</h1>
+  <p>The web server returned an unknown error. Error code 520</p>
+</body>
+</html>`);
+});
+
 module.exports = router;
 

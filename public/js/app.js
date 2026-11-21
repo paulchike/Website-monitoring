@@ -701,13 +701,25 @@ class NOCDashboard {
         const msg = hb.error_message;
         const isDbErr = msg.toLowerCase().includes('database') || msg.toLowerCase().includes('sql');
         const is404 = hb.status_code === 404 || msg.includes('404');
-        const isCf = msg.includes('Cloudflare');
+        const is520 = hb.status_code === 520 || msg.includes('520') || msg.toLowerCase().includes('unknown error');
+        const is503 = hb.status_code === 503;
+        const isCf = msg.includes('Cloudflare') && !is520;
 
         let badgeClass = 'card-err-down';
         let badgeIcon = '⚠️';
         let label = msg;
 
-        if (isDbErr) {
+        if (is520) {
+          badgeClass = 'card-err-520';
+          badgeIcon = '☁️';
+          label = 'ERROR 520: Web server is returning an unknown error';
+          httpCodeBadge = hb.status_code === 503 ? 'HTTP 503 / 520 OUTAGE' : 'HTTP 520 UNKNOWN ERROR';
+        } else if (is503) {
+          badgeClass = 'card-err-down';
+          badgeIcon = '⚠️';
+          label = 'HTTP 503 SERVICE UNAVAILABLE';
+          httpCodeBadge = 'HTTP 503 UNAVAILABLE';
+        } else if (isDbErr) {
           badgeClass = 'card-err-db';
           badgeIcon = '🗄️';
           label = `DB ERROR: ${msg.replace(/^Database Error:\s*/i, '')}`;
@@ -804,6 +816,8 @@ class NOCDashboard {
       let displayVal = hb.response_time_ms ? `${Math.round(hb.response_time_ms)}ms` : '--';
       if (status === 'DOWN') {
         if (hb.status_code === 404) displayVal = '404';
+        else if (hb.status_code === 520 || (hb.error_message && hb.error_message.includes('520'))) displayVal = 'ERR 520';
+        else if (hb.status_code === 503) displayVal = '503';
         else if (hb.error_message && (hb.error_message.includes('Database') || hb.error_message.includes('SQL'))) displayVal = 'DB ERR';
         else if (hb.status_code) displayVal = `HTTP ${hb.status_code}`;
         else displayVal = 'DOWN';

@@ -407,6 +407,9 @@
           <div class="form-group flex-1">
             <label for="form-expected-status">Expected Status</label>
             <input type="number" id="form-expected-status" value="200" min="100" max="599" />
+            <span style="font-size: 10.5px; color: #94a3b8; margin-top: 3px; display: block;">
+              Default: 200 OK. Auto-triggers downtime on Error 520 ("Web server is returning an unknown error"), 503, and all 5xx server failures.
+            </span>
           </div>
         </div>
 

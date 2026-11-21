@@ -831,6 +831,12 @@ body.noc-theme {
   color: #f0abfc;
 }
 
+.card-err-520 {
+  background: rgba(249, 115, 22, 0.15);
+  border-color: rgba(249, 115, 22, 0.45);
+  color: #fdba74;
+}
+
 .err-icon {
   font-size: 12px;
   flex-shrink: 0;

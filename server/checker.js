@@ -179,14 +179,46 @@ async function performCheck(monitor, redirectHop = 0) {
           }
         }
 
+        // Check for Web Server Unknown Error / Cloudflare Error code 520 signatures in response body
+        let detectedWebServer520Error = null;
+        const webServer520Patterns = [
+          { pattern: /web server is returning an unknown error/i, name: 'Web server is returning an unknown error (Error code 520)' },
+          { pattern: /error code 520/i, name: 'Cloudflare Error code 520 (Web server returning unknown error)' },
+          { pattern: /error 520(\s|:|-|<)/i, name: 'Error 520: Web server is returning an unknown error' },
+          { pattern: /there is an unknown error on the origin web server/i, name: 'Origin Web Server Unknown Error (Error code 520)' }
+        ];
+
+        for (const wsCheck of webServer520Patterns) {
+          if (wsCheck.pattern.test(responseBody)) {
+            detectedWebServer520Error = wsCheck.name;
+            break;
+          }
+        }
+
         // Verify status code
         const isStatusMatch = (expectedStatus >= 100 && expectedStatus < 600)
           ? statusCode === expectedStatus
           : (statusCode >= 200 && statusCode < 400);
 
-        if (detectedDbError) {
+        if (detectedWebServer520Error || statusCode === 520) {
+          // Downtime Trigger: Web server is returning an unknown error (Error code 520)
+          status = 'DOWN';
+          if (statusCode === 520) {
+            errorMessage = 'HTTP 520: Web server is returning an unknown error (Error code 520)';
+          } else if (statusCode === 503) {
+            errorMessage = 'HTTP 503 Service Unavailable: Web server is returning an unknown error (Error code 520)';
+          } else if (statusCode > 0 && statusCode !== 200) {
+            errorMessage = `HTTP ${statusCode}: Web server is returning an unknown error (Error code 520)`;
+          } else {
+            errorMessage = 'Web server is returning an unknown error (Error code 520)';
+          }
+        } else if (detectedDbError) {
           status = 'DOWN';
           errorMessage = `Database Error: ${detectedDbError}`;
+        } else if (statusCode === 503) {
+          // Downtime Trigger: HTTP 503 Service Unavailable
+          status = 'DOWN';
+          errorMessage = 'HTTP 503 Service Unavailable';
         } else if (!isStatusMatch) {
           status = 'DOWN';
           if (statusCode === 404) {
@@ -201,6 +233,20 @@ async function performCheck(monitor, redirectHop = 0) {
             errorMessage = 'HTTP 503 Service Unavailable';
           } else if (statusCode === 504) {
             errorMessage = 'HTTP 504 Gateway Timeout';
+          } else if (statusCode === 520) {
+            errorMessage = 'HTTP 520: Web server is returning an unknown error (Error code 520)';
+          } else if (statusCode === 521) {
+            errorMessage = 'HTTP 521 Web Server Is Down';
+          } else if (statusCode === 522) {
+            errorMessage = 'HTTP 522 Connection Timed Out (Cloudflare)';
+          } else if (statusCode === 523) {
+            errorMessage = 'HTTP 523 Origin Is Unreachable';
+          } else if (statusCode === 524) {
+            errorMessage = 'HTTP 524 A Timeout Occurred';
+          } else if (statusCode === 525) {
+            errorMessage = 'HTTP 525 SSL Handshake Failed';
+          } else if (statusCode === 526) {
+            errorMessage = 'HTTP 526 Invalid SSL Certificate';
           } else {
             errorMessage = `HTTP Status mismatch: received ${statusCode}, expected ${expectedStatus}`;
           }
