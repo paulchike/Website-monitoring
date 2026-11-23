@@ -9,8 +9,11 @@ const {
   logAudit,
   generateToken,
   verifyPassword,
-  hashPassword
+  hashPassword,
+  generateCsrfToken,
+  verifyCsrfToken
 } = require('./auth');
+const { validateUrlForSSRF } = require('./ssrf');
 
 const router = express.Router();
 
@@ -27,9 +30,86 @@ function isValidHttpUrl(string) {
 // Attach user session to all incoming requests
 router.use(authenticate);
 
+// Defense-in-depth: Anti-CSRF Protection Middleware
+function csrfProtection(req, res, next) {
+  // Safe read-only HTTP methods are exempt from anti-CSRF token verification
+  const safeMethods = ['GET', 'HEAD', 'OPTIONS'];
+  if (safeMethods.includes(req.method)) {
+    return next();
+  }
+
+  // 1. Origin / Referer Validation against Host header
+  const host = req.headers.host;
+  const origin = req.headers.origin;
+  const referer = req.headers.referer;
+
+  if (origin) {
+    try {
+      const originUrl = new URL(origin);
+      if (originUrl.host !== host) {
+        return res.status(403).json({
+          success: false,
+          error: `CSRF Protection: Origin mismatch (${originUrl.host} != ${host})`
+        });
+      }
+    } catch (_) {
+      return res.status(403).json({
+        success: false,
+        error: 'CSRF Protection: Malformed Origin header'
+      });
+    }
+  } else if (referer) {
+    try {
+      const refererUrl = new URL(referer);
+      if (refererUrl.host !== host) {
+        return res.status(403).json({
+          success: false,
+          error: `CSRF Protection: Referer mismatch (${refererUrl.host} != ${host})`
+        });
+      }
+    } catch (_) {
+      // In case referer is malformed
+    }
+  }
+
+  // 2. Exempt public authentication login endpoint (session not yet established)
+  if (req.path === '/auth/login') {
+    return next();
+  }
+
+  // 3. Verify anti-CSRF token from header or body
+  const csrfToken = req.headers['x-csrf-token'] || (req.body && req.body._csrf) || (req.query && req.query._csrf);
+  if (csrfToken && verifyCsrfToken(csrfToken)) {
+    return next();
+  }
+
+  // 4. Programmatic Bearer token calls without cookie session are not vulnerable to browser CSRF
+  const hasCookieSession = Boolean(req.headers.cookie && req.headers.cookie.includes('noc_token='));
+  const hasBearerAuth = Boolean(req.headers.authorization && req.headers.authorization.startsWith('Bearer '));
+  if (hasBearerAuth && !hasCookieSession) {
+    return next();
+  }
+
+  return res.status(403).json({
+    success: false,
+    error: 'CSRF verification failed: Missing or invalid CSRF token. Please refresh the page.'
+  });
+}
+
+router.use(csrfProtection);
+
 /* ========================================================================
    Authentication & RBAC Routes
    ======================================================================== */
+
+// GET /api/auth/csrf-token
+router.get('/auth/csrf-token', (req, res) => {
+  const token = generateCsrfToken(req.user ? req.user.id : 'guest');
+  res.json({
+    success: true,
+    csrfToken: token
+  });
+});
 
 // POST /api/auth/login
 router.post('/auth/login', (req, res) => {
@@ -56,6 +136,7 @@ router.post('/auth/login', (req, res) => {
     queries.updateUserLastLogin.run(user.id);
 
     const token = generateToken(user);
+    const csrfToken = generateCsrfToken(user.id);
     logAudit(req, 'LOGIN', user.id, `User ${user.username} logged in successfully`);
 
     // Set HttpOnly, SameSite=Lax cookie to protect session token from script access (XSS defense)
@@ -64,6 +145,7 @@ router.post('/auth/login', (req, res) => {
     res.json({
       success: true,
       token,
+      csrfToken,
       user: {
         id: user.id,
         username: user.username,
@@ -93,6 +175,7 @@ router.get('/auth/me', (req, res) => {
       success: true,
       user: null,
       isGuest: true,
+      csrfToken: generateCsrfToken('guest'),
       permissions: {
         can_add_url: false,
         can_edit_url: false,
@@ -106,6 +189,7 @@ router.get('/auth/me', (req, res) => {
     success: true,
     user: req.user,
     isGuest: false,
+    csrfToken: generateCsrfToken(req.user.id),
     permissions: req.user.permissions
   });
 });
@@ -525,7 +609,7 @@ router.get('/monitors/:id', (req, res) => {
 });
 
 // POST /api/monitors (RBAC: Requires can_add_url permission)
-router.post('/monitors', requireAuth, requirePermission('can_add_url'), (req, res) => {
+router.post('/monitors', requireAuth, requirePermission('can_add_url'), async (req, res) => {
   try {
     const {
       name,
@@ -547,6 +631,15 @@ router.post('/monitors', requireAuth, requirePermission('can_add_url'), (req, re
 
     if (!isValidHttpUrl(url.trim())) {
       return res.status(400).json({ success: false, error: 'Invalid URL: Target URL must begin with http:// or https://' });
+    }
+
+    // SSRF Security Policy Verification
+    const ssrfCheck = await validateUrlForSSRF(url.trim());
+    if (!ssrfCheck.safe) {
+      return res.status(400).json({
+        success: false,
+        error: `SSRF Security Policy Block: Target URL is rejected (${ssrfCheck.error})`
+      });
     }
 
     const result = queries.createMonitor.run({
@@ -578,7 +671,7 @@ router.post('/monitors', requireAuth, requirePermission('can_add_url'), (req, re
 });
 
 // PUT /api/monitors/:id (RBAC: Requires can_edit_url permission)
-router.put('/monitors/:id', requireAuth, requirePermission('can_edit_url'), (req, res) => {
+router.put('/monitors/:id', requireAuth, requirePermission('can_edit_url'), async (req, res) => {
   try {
     const monitorId = Number(req.params.id);
     if (!Number.isInteger(monitorId) || monitorId <= 0) {
@@ -605,6 +698,17 @@ router.put('/monitors/:id', requireAuth, requirePermission('can_edit_url'), (req
 
     if (url && !isValidHttpUrl(url.trim())) {
       return res.status(400).json({ success: false, error: 'Invalid URL: Target URL must begin with http:// or https://' });
+    }
+
+    if (url && url.trim() !== existing.url) {
+      // SSRF Security Policy Verification for updated URL
+      const ssrfCheck = await validateUrlForSSRF(url.trim());
+      if (!ssrfCheck.safe) {
+        return res.status(400).json({
+          success: false,
+          error: `SSRF Security Policy Block: Target URL is rejected (${ssrfCheck.error})`
+        });
+      }
     }
 
     queries.updateMonitor.run({

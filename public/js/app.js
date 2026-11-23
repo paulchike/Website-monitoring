@@ -43,6 +43,7 @@ class NOCDashboard {
     localStorage.removeItem('noc_token');
     this.token = localStorage.getItem('pau_noc_session_token') || null;
     this.currentUser = null;
+    this.csrfToken = null;
     this.userPermissions = {
       can_add_url: false,
       can_edit_url: false,
@@ -60,11 +61,12 @@ class NOCDashboard {
     this.init();
   }
 
-  init() {
+  async init() {
     this.initClock();
     this.initAutoRefresh();
     this.initSound();
     this.initEventListeners();
+    await this.fetchCsrfToken();
     this.initAuth();
     this.initWebSocket();
     this.setView(this.currentView);
@@ -1353,9 +1355,8 @@ class NOCDashboard {
 
   async acknowledgeIncident(incidentId) {
     try {
-      const res = await fetch(`/api/incidents/${incidentId}/acknowledge`, {
+      const res = await this.authFetch(`/api/incidents/${incidentId}/acknowledge`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ operator: 'NOC Controller' })
       });
       const data = await res.json();
@@ -1623,15 +1624,37 @@ class NOCDashboard {
   }
 
   /* ========================================================================
-     Authenticated Fetch Helper
+     Authenticated Fetch Helper & CSRF Protection
      ======================================================================== */
+  async fetchCsrfToken() {
+    try {
+      const res = await fetch('/api/auth/csrf-token');
+      const data = await res.json();
+      if (data.success && data.csrfToken) {
+        this.csrfToken = data.csrfToken;
+      }
+    } catch (e) {
+      console.warn('Failed to fetch CSRF token:', e);
+    }
+  }
+
   async authFetch(url, options = {}) {
+    const method = (options.method || 'GET').toUpperCase();
     const headers = {
       'Content-Type': 'application/json',
       ...(options.headers || {})
     };
     if (this.token) {
       headers['Authorization'] = `Bearer ${this.token}`;
+    }
+    // Attach anti-CSRF token on all state-changing requests (POST, PUT, DELETE, PATCH)
+    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(method)) {
+      if (!this.csrfToken) {
+        await this.fetchCsrfToken();
+      }
+      if (this.csrfToken) {
+        headers['X-CSRF-Token'] = this.csrfToken;
+      }
     }
     const res = await fetch(url, { ...options, headers });
     if (res.status === 401 || res.status === 403) {
@@ -1676,7 +1699,13 @@ class NOCDashboard {
       if (data.success && data.user) {
         this.currentUser = data.user;
         this.userPermissions = data.permissions;
+        if (data.csrfToken) {
+          this.csrfToken = data.csrfToken;
+        }
       } else {
+        if (data.csrfToken) {
+          this.csrfToken = data.csrfToken;
+        }
         this.token = null;
         this.currentUser = null;
         this.userPermissions = {
@@ -1892,6 +1921,9 @@ class NOCDashboard {
       const data = await res.json();
       if (data.success) {
         this.token = data.token;
+        if (data.csrfToken) {
+          this.csrfToken = data.csrfToken;
+        }
         localStorage.setItem('pau_noc_session_token', this.token);
         localStorage.setItem('noc_token', this.token);
         this.currentUser = data.user;
@@ -1917,9 +1949,8 @@ class NOCDashboard {
   async logout() {
     try {
       if (this.token) {
-        await fetch('/api/auth/logout', {
-          method: 'POST',
-          headers: { 'Authorization': `Bearer ${this.token}` }
+        await this.authFetch('/api/auth/logout', {
+          method: 'POST'
         });
       }
     } catch (e) {}
@@ -1935,6 +1966,7 @@ class NOCDashboard {
     };
     localStorage.removeItem('pau_noc_session_token');
     localStorage.removeItem('noc_token');
+    await this.fetchCsrfToken();
     this.updateUserUI();
     this.renderMonitors();
     this.showToast('Logged out. Operating in Public Read-Only mode.', 'info');

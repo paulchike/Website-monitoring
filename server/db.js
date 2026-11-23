@@ -589,6 +589,15 @@ function seedAuthIfEmpty() {
 seedDatabaseIfEmpty();
 seedAuthIfEmpty();
 
+// Ensure clean database shutdown on process exit to avoid native cleanup hook assertions
+process.on('exit', () => {
+  try {
+    if (db && db.open) {
+      db.close();
+    }
+  } catch (_) {}
+});
+
 module.exports = {
   db,
   queries

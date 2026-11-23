@@ -185,11 +185,57 @@ function logAudit(req, action, targetId = null, details = '') {
   }
 }
 
+/**
+ * Generates a signed anti-CSRF token (HMAC-SHA256 with domain separation)
+ * @param {string|number} userId
+ * @returns {string} token
+ */
+function generateCsrfToken(userId = 'guest') {
+  const payload = {
+    uid: userId,
+    exp: Date.now() + 24 * 60 * 60 * 1000, // 24 hours
+    rnd: crypto.randomBytes(16).toString('hex')
+  };
+  const payloadStr = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto.createHmac('sha256', AUTH_SECRET).update(`csrf:${payloadStr}`).digest('base64url');
+  return `${payloadStr}.${signature}`;
+}
+
+/**
+ * Verifies an anti-CSRF token
+ * @param {string} token
+ * @returns {boolean} isValid
+ */
+function verifyCsrfToken(token) {
+  if (!token || typeof token !== 'string') return false;
+  const parts = token.split('.');
+  if (parts.length !== 2) return false;
+
+  const [payloadStr, signature] = parts;
+  try {
+    const expectedSig = crypto.createHmac('sha256', AUTH_SECRET).update(`csrf:${payloadStr}`).digest('base64url');
+    const sigBuf = Buffer.from(signature);
+    const expBuf = Buffer.from(expectedSig);
+    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
+      return false;
+    }
+    const payload = JSON.parse(Buffer.from(payloadStr, 'base64url').toString('utf8'));
+    if (payload.exp && Date.now() > payload.exp) {
+      return false; // Expired
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 module.exports = {
   hashPassword,
   verifyPassword,
   generateToken,
   verifyToken,
+  generateCsrfToken,
+  verifyCsrfToken,
   authenticate,
   requireAuth,
   requirePermission,

@@ -1,6 +1,9 @@
 const http = require('http');
 const https = require('https');
 const { URL } = require('url');
+const { validateUrlForSSRF, createSafeLookup } = require('./ssrf');
+
+const safeLookup = createSafeLookup();
 
 /**
  * Performs a comprehensive network health check with high-precision timing breakdown,
@@ -11,6 +14,24 @@ const { URL } = require('url');
  * @returns {Promise<Object>} checkResult
  */
 async function performCheck(monitor, redirectHop = 0) {
+  // Validate target URL against SSRF policy before initiating any network activity
+  const ssrfCheck = await validateUrlForSSRF(monitor.url);
+  if (!ssrfCheck.safe) {
+    return {
+      status: 'DOWN',
+      status_code: 0,
+      response_time_ms: 0,
+      dns_time_ms: 0,
+      tcp_time_ms: 0,
+      tls_time_ms: null,
+      ttfb_ms: 0,
+      error_message: `SSRF Security Block: ${ssrfCheck.error}`,
+      ssl_days_remaining: null,
+      ssl_valid: null,
+      ssl_issuer: null
+    };
+  }
+
   return new Promise((resolve) => {
     let parsedUrl;
     try {
@@ -94,7 +115,8 @@ async function performCheck(monitor, redirectHop = 0) {
       path: (parsedUrl.pathname || '/') + (parsedUrl.search || ''),
       headers,
       timeout: timeoutMs,
-      rejectUnauthorized: false
+      rejectUnauthorized: false,
+      lookup: safeLookup
     };
 
     const req = client.request(options, (res) => {
@@ -125,7 +147,28 @@ async function performCheck(monitor, redirectHop = 0) {
           req.destroy();
           try {
             const nextUrl = new URL(res.headers.location, parsedUrl).toString();
-            return resolve(performCheck({ ...monitor, url: nextUrl }, redirectHop + 1));
+            // Validate redirect target against SSRF policy before following hop
+            validateUrlForSSRF(nextUrl).then((redirCheck) => {
+              if (!redirCheck.safe) {
+                return resolve({
+                  status: 'DOWN',
+                  status_code: statusCode,
+                  response_time_ms: Math.round((performance.now() - requestStart) * 10) / 10,
+                  dns_time_ms: 0,
+                  tcp_time_ms: 0,
+                  tls_time_ms: null,
+                  ttfb_ms: 0,
+                  error_message: `SSRF Redirect Block: Target "${nextUrl}" rejected (${redirCheck.error})`,
+                  ssl_days_remaining: null,
+                  ssl_valid: null,
+                  ssl_issuer: null
+                });
+              }
+              return resolve(performCheck({ ...monitor, url: nextUrl }, redirectHop + 1));
+            }).catch(() => {
+              return resolve(performCheck({ ...monitor, url: nextUrl }, redirectHop + 1));
+            });
+            return;
           } catch (redirErr) {
             // If redirect resolution fails, fall through to evaluate as-is
           }
