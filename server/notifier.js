@@ -1,6 +1,17 @@
 const nodemailer = require('nodemailer');
 const { queries, db } = require('./db');
 
+// HTML entity escaping helper to prevent HTML injection / XSS in email clients
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 // In-memory token cache for Microsoft Graph API
 let cachedGraphToken = null;
 let graphTokenExpiresAt = 0;
@@ -270,15 +281,15 @@ async function sendTestEmail(customSettings, targetEmail) {
           <table class="table">
             <tr><td class="label">Dispatch Provider</td><td class="val">${isGraph ? 'Microsoft Graph API (OAuth 2.0)' : 'SMTP Relay Gateway'}</td></tr>
             ${isGraph ? `
-              <tr><td class="label">Directory (Tenant) ID</td><td class="val">${cfg.ms_tenant_id}</td></tr>
-              <tr><td class="label">Application (Client) ID</td><td class="val">${cfg.ms_client_id}</td></tr>
-              <tr><td class="label">Sender Mailbox</td><td class="val">${cfg.ms_sender_email}</td></tr>
+              <tr><td class="label">Directory (Tenant) ID</td><td class="val">${escapeHtml(cfg.ms_tenant_id)}</td></tr>
+              <tr><td class="label">Application (Client) ID</td><td class="val">${escapeHtml(cfg.ms_client_id)}</td></tr>
+              <tr><td class="label">Sender Mailbox</td><td class="val">${escapeHtml(cfg.ms_sender_email)}</td></tr>
             ` : `
-              <tr><td class="label">SMTP Gateway</td><td class="val">${cfg.smtp_host}:${cfg.smtp_port}</td></tr>
-              <tr><td class="label">Authenticated User</td><td class="val">${cfg.smtp_user}</td></tr>
+              <tr><td class="label">SMTP Gateway</td><td class="val">${escapeHtml(cfg.smtp_host)}:${escapeHtml(cfg.smtp_port)}</td></tr>
+              <tr><td class="label">Authenticated User</td><td class="val">${escapeHtml(cfg.smtp_user)}</td></tr>
             `}
             <tr><td class="label">Connection Status</td><td><span class="badge-ok">AUTHENTICATED & VERIFIED</span></td></tr>
-            <tr><td class="label">Dispatched At</td><td class="val">${now}</td></tr>
+            <tr><td class="label">Dispatched At</td><td class="val">${escapeHtml(now)}</td></tr>
           </table>
         </div>
         <div class="footer">
@@ -349,15 +360,15 @@ async function sendOutageAlert(incident, monitor, heartbeat) {
           <div class="body">
             <p>The NOC Health Monitor has detected an active outage on the following target service:</p>
             <div class="alert-box">
-              <strong style="color: #f87171; font-size: 15px;">${monitor.name} is DOWN</strong>
-              <div style="font-size: 12px; color: #cbd5e1; margin-top: 4px;">Detected Error: <code>${errMsg}</code></div>
+              <strong style="color: #f87171; font-size: 15px;">${escapeHtml(monitor.name)} is DOWN</strong>
+              <div style="font-size: 12px; color: #cbd5e1; margin-top: 4px;">Detected Error: <code>${escapeHtml(errMsg)}</code></div>
             </div>
             <table class="table">
-              <tr><td class="label">Target Service</td><td class="val">${monitor.name}</td></tr>
-              <tr><td class="label">Endpoint URL</td><td class="val"><a href="${monitor.url}" style="color: #38bdf8;">${monitor.url}</a></td></tr>
-              <tr><td class="label">Group / Tier</td><td class="val">${monitor.group_tag || 'Production'}</td></tr>
-              <tr><td class="label">HTTP Status</td><td class="val"><span class="badge-down">${statusCode}</span></td></tr>
-              <tr><td class="label">Outage Started</td><td class="val">${now}</td></tr>
+              <tr><td class="label">Target Service</td><td class="val">${escapeHtml(monitor.name)}</td></tr>
+              <tr><td class="label">Endpoint URL</td><td class="val"><a href="${escapeHtml(monitor.url)}" style="color: #38bdf8;">${escapeHtml(monitor.url)}</a></td></tr>
+              <tr><td class="label">Group / Tier</td><td class="val">${escapeHtml(monitor.group_tag || 'Production')}</td></tr>
+              <tr><td class="label">HTTP Status</td><td class="val"><span class="badge-down">${escapeHtml(statusCode)}</span></td></tr>
+              <tr><td class="label">Outage Started</td><td class="val">${escapeHtml(now)}</td></tr>
             </table>
           </div>
           <div class="footer">
@@ -435,15 +446,15 @@ async function sendRecoveryAlert(incident, monitor, heartbeat) {
           <div class="body">
             <p>The NOC Health Monitor reports that the service outage has resolved and the target is fully operational:</p>
             <div class="alert-box">
-              <strong style="color: #4ade80; font-size: 15px;">${monitor.name} is back ONLINE</strong>
-              <div style="font-size: 12px; color: #cbd5e1; margin-top: 4px;">Total Outage Duration: <strong>${durationText}</strong></div>
+              <strong style="color: #4ade80; font-size: 15px;">${escapeHtml(monitor.name)} is back ONLINE</strong>
+              <div style="font-size: 12px; color: #cbd5e1; margin-top: 4px;">Total Outage Duration: <strong>${escapeHtml(durationText)}</strong></div>
             </div>
             <table class="table">
-              <tr><td class="label">Target Service</td><td class="val">${monitor.name}</td></tr>
-              <tr><td class="label">Endpoint URL</td><td class="val"><a href="${monitor.url}" style="color: #38bdf8;">${monitor.url}</a></td></tr>
+              <tr><td class="label">Target Service</td><td class="val">${escapeHtml(monitor.name)}</td></tr>
+              <tr><td class="label">Endpoint URL</td><td class="val"><a href="${escapeHtml(monitor.url)}" style="color: #38bdf8;">${escapeHtml(monitor.url)}</a></td></tr>
               <tr><td class="label">Current Status</td><td class="val"><span class="badge-up">200 OK • UP</span></td></tr>
-              <tr><td class="label">Latency</td><td class="val">${responseTime}</td></tr>
-              <tr><td class="label">Resolved At</td><td class="val">${now}</td></tr>
+              <tr><td class="label">Latency</td><td class="val">${escapeHtml(responseTime)}</td></tr>
+              <tr><td class="label">Resolved At</td><td class="val">${escapeHtml(now)}</td></tr>
             </table>
           </div>
           <div class="footer">

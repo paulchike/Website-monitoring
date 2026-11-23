@@ -156,9 +156,10 @@ const NOCCharts = {
       else if (h.status === 'DOWN') statusClass = 'tick-down';
 
       const timeStr = new Date(h.timestamp).toLocaleTimeString();
-      const tooltip = `${timeStr} — ${h.status} (${h.response_time_ms ? h.response_time_ms + 'ms' : 'No response'}) ${h.error_message ? '- ' + h.error_message : ''}`;
+      const rawTooltip = `${timeStr} — ${h.status} (${h.response_time_ms ? h.response_time_ms + 'ms' : 'No response'}) ${h.error_message ? '- ' + h.error_message : ''}`;
+      const safeTooltip = String(rawTooltip).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 
-      html += `<div class="tick ${statusClass}" title="${tooltip}"></div>`;
+      html += `<div class="tick ${statusClass}" title="${safeTooltip}"></div>`;
     });
 
     html += '</div>';

@@ -1,6 +1,28 @@
 /**
  * NOC Real-Time Monitoring Dashboard Controller
  */
+
+// HTML entity escaping helper to prevent Cross-Site Scripting (XSS)
+function escapeHtml(str) {
+  if (str === null || str === undefined) return '';
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+// URL sanitization helper to block dangerous protocols (e.g. javascript:, data:, vbscript:)
+function sanitizeUrl(url) {
+  if (!url) return '#';
+  const trimmed = String(url).trim();
+  if (/^(https?:\/\/|\/)/i.test(trimmed)) {
+    return escapeHtml(trimmed);
+  }
+  return '#';
+}
+
 class NOCDashboard {
   constructor() {
     this.monitors = [];
@@ -684,7 +706,7 @@ class NOCDashboard {
         let sslClass = 'ssl-good';
         if (hb.ssl_days_remaining <= 0) sslClass = 'ssl-expired';
         else if (hb.ssl_days_remaining <= 14) sslClass = 'ssl-warning';
-        sslHtml = `<span class="ssl-badge ${sslClass}" title="SSL valid for ${hb.ssl_days_remaining} days (${hb.ssl_issuer || 'Verified'})">🛡️ ${hb.ssl_days_remaining}d</span>`;
+        sslHtml = `<span class="ssl-badge ${sslClass}" title="SSL valid for ${escapeHtml(hb.ssl_days_remaining)} days (${escapeHtml(hb.ssl_issuer || 'Verified')})">🛡️ ${escapeHtml(hb.ssl_days_remaining)}d</span>`;
       }
 
       // History Ticks
@@ -741,39 +763,45 @@ class NOCDashboard {
         httpCodeColor = 'uptime-summary-text text-rose';
 
         errorBannerHtml = `
-          <div class="card-error-banner ${badgeClass}" title="${msg}">
+          <div class="card-error-banner ${badgeClass}" title="${escapeHtml(msg)}">
             <span class="err-icon">${badgeIcon}</span>
-            <span class="err-text">${label}</span>
+            <span class="err-text">${escapeHtml(label)}</span>
           </div>
         `;
       }
 
+      const safeName = escapeHtml(m.name);
+      const safeUrl = sanitizeUrl(m.url);
+      const displayUrl = escapeHtml(m.url);
+      const safeGroup = escapeHtml(m.group_tag || 'Default');
+      const safeId = Number(m.id);
+
       return `
-        <div class="monitor-card ${isDown ? 'card-down' : ''}" onclick="window.app.openDetails(${m.id})">
+        <div class="monitor-card ${isDown ? 'card-down' : ''}" onclick="window.app.openDetails(${safeId})">
           <div class="card-top">
             <div class="card-title-col">
               <div class="card-name-row">
                 <span class="status-pill ${statusPillClass}"><span class="pulse-dot"></span>${status}</span>
-                <span class="card-name" title="${m.name}">${m.name}</span>
+                <span class="card-name" title="${safeName}">${safeName}</span>
               </div>
-              <a href="${m.url}" target="_blank" rel="noopener noreferrer" class="card-url" onclick="event.stopPropagation()">${m.url}</a>
+              <a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="card-url" onclick="event.stopPropagation()">${displayUrl}</a>
             </div>
             <div class="card-badges">
-              <span class="group-tag">${m.group_tag || 'Default'}</span>
+              <span class="group-tag">${safeGroup}</span>
             </div>
           </div>
 
           <div class="card-mid">
             <div class="card-metric-cell">
               <span style="color: var(--text-dim);">Latency:</span>
-              <span class="latency-val ${isDown ? 'text-rose' : (isDegraded ? 'text-amber' : 'text-cyan')}">${latencyMs}</span>
+              <span class="latency-val ${isDown ? 'text-rose' : (isDegraded ? 'text-amber' : 'text-cyan')}">${escapeHtml(latencyMs)}</span>
             </div>
             <div class="card-metric-cell">
               ${sslHtml}
             </div>
             <div class="card-metric-cell">
               <span style="color: var(--text-dim);">24h:</span>
-              <span class="text-emerald" style="font-weight: 700;">${uptimeStr}</span>
+              <span class="text-emerald" style="font-weight: 700;">${escapeHtml(uptimeStr)}</span>
             </div>
           </div>
 
@@ -782,16 +810,16 @@ class NOCDashboard {
           <div class="card-bottom">
             <div class="history-strip-header">
               <span>RECENT CHECKS</span>
-              <span>EVERY ${m.interval_seconds}S</span>
+              <span>EVERY ${Number(m.interval_seconds) || 30}S</span>
             </div>
             ${ticksHtml}
             <div class="card-actions-row" onclick="event.stopPropagation()">
-              <span class="${httpCodeColor}" style="font-weight: 700; font-size: 10px;">${httpCodeBadge}</span>
+              <span class="${httpCodeColor}" style="font-weight: 700; font-size: 10px;">${escapeHtml(httpCodeBadge)}</span>
               <div style="display: flex; gap: 4px;">
-                <button class="btn-card-action" onclick="window.app.triggerPing(${m.id})" title="Ping this endpoint immediately">PING</button>
-                <button class="btn-card-action ${this.userPermissions.can_toggle_url ? '' : 'btn-locked'}" onclick="window.app.toggleActive(${m.id})" title="${this.userPermissions.can_toggle_url ? 'Pause / Resume' : 'Toggle locked'}">${m.is_active ? 'PAUSE' : 'RESUME'}</button>
-                <button class="btn-card-action ${this.userPermissions.can_edit_url ? '' : 'btn-locked'}" onclick="window.app.openEditById(${m.id})" title="${this.userPermissions.can_edit_url ? 'Edit Target & Headers' : 'Edit locked: Requires Operator or Admin role'}">${this.userPermissions.can_edit_url ? 'EDIT' : '🔒 EDIT'}</button>
-                <button class="btn-card-action" onclick="window.app.openDetails(${m.id})" title="Inspect Telemetry">INSPECT</button>
+                <button class="btn-card-action" onclick="window.app.triggerPing(${safeId})" title="Ping this endpoint immediately">PING</button>
+                <button class="btn-card-action ${this.userPermissions.can_toggle_url ? '' : 'btn-locked'}" onclick="window.app.toggleActive(${safeId})" title="${this.userPermissions.can_toggle_url ? 'Pause / Resume' : 'Toggle locked'}">${m.is_active ? 'PAUSE' : 'RESUME'}</button>
+                <button class="btn-card-action ${this.userPermissions.can_edit_url ? '' : 'btn-locked'}" onclick="window.app.openEditById(${safeId})" title="${this.userPermissions.can_edit_url ? 'Edit Target & Headers' : 'Edit locked: Requires Operator or Admin role'}">${this.userPermissions.can_edit_url ? 'EDIT' : '🔒 EDIT'}</button>
+                <button class="btn-card-action" onclick="window.app.openDetails(${safeId})" title="Inspect Telemetry">INSPECT</button>
               </div>
             </div>
           </div>
@@ -823,15 +851,20 @@ class NOCDashboard {
         else displayVal = 'DOWN';
       }
 
+      const safeName = escapeHtml(m.name);
+      const safeGroup = escapeHtml(m.group_tag || 'Core');
+      const safeDisplayVal = escapeHtml(displayVal);
+      const safeId = Number(m.id);
+
       return `
-        <div class="matrix-tile ${tileClass}" onclick="window.app.openDetails(${m.id})">
+        <div class="matrix-tile ${tileClass}" onclick="window.app.openDetails(${safeId})">
           <div style="display: flex; justify-content: space-between; align-items: flex-start;">
-            <div class="matrix-tile-name" title="${m.name}">${m.name}</div>
+            <div class="matrix-tile-name" title="${safeName}">${safeName}</div>
             <span style="font-size: 9px; font-weight: 700; color: var(--text-dim);">${status}</span>
           </div>
           <div style="display: flex; justify-content: space-between; align-items: baseline;">
-            <span class="matrix-tile-val ${status === 'DOWN' ? 'text-rose' : (status === 'DEGRADED' ? 'text-amber' : 'text-cyan')}">${displayVal}</span>
-            <span class="matrix-tile-group">${m.group_tag || 'Core'}</span>
+            <span class="matrix-tile-val ${status === 'DOWN' ? 'text-rose' : (status === 'DEGRADED' ? 'text-amber' : 'text-cyan')}">${safeDisplayVal}</span>
+            <span class="matrix-tile-group">${safeGroup}</span>
           </div>
         </div>
       `;
@@ -863,21 +896,26 @@ class NOCDashboard {
         : '';
 
       const errSnippet = (isDown && hb.error_message) 
-        ? `<div style="font-size: 10px; color: #f87171; font-weight: 600; margin-top: 2px;">⚠️ ${hb.error_message}</div>` 
+        ? `<div style="font-size: 10px; color: #f87171; font-weight: 600; margin-top: 2px;">⚠️ ${escapeHtml(hb.error_message)}</div>` 
         : '';
 
+      const safeName = escapeHtml(m.name);
+      const safeDisplayUrl = escapeHtml(m.url);
+      const safeGroup = escapeHtml(m.group_tag || 'Production');
+      const safeId = Number(m.id);
+
       return `
-        <tr class="${isDown ? 'table-row-down' : ''}" onclick="window.app.openDetails(${m.id})" style="cursor: pointer;">
+        <tr class="${isDown ? 'table-row-down' : ''}" onclick="window.app.openDetails(${safeId})" style="cursor: pointer;">
           <td><span class="status-pill ${statusPillClass}"><span class="pulse-dot"></span>${status}</span></td>
           <td>
-            <div style="font-weight: 700; color: #fff;">${m.name}</div>
-            <div style="font-size: 10.5px; color: var(--text-dim); font-family: var(--font-mono);">${m.url}</div>
+            <div style="font-weight: 700; color: #fff;">${safeName}</div>
+            <div style="font-size: 10.5px; color: var(--text-dim); font-family: var(--font-mono);">${safeDisplayUrl}</div>
             ${errSnippet}
           </td>
-          <td><span class="group-tag">${m.group_tag || 'Production'}</span></td>
-          <td style="font-family: var(--font-mono); font-weight: 700;" class="${isDown ? 'text-rose' : 'text-cyan'}">${latencyMs}</td>
-          <td style="font-size: 11px; color: var(--text-muted);">${sslText}</td>
-          <td style="font-family: var(--font-mono); font-weight: 700; color: var(--color-up);">${uptimeStr}</td>
+          <td><span class="group-tag">${safeGroup}</span></td>
+          <td style="font-family: var(--font-mono); font-weight: 700;" class="${isDown ? 'text-rose' : 'text-cyan'}">${escapeHtml(latencyMs)}</td>
+          <td style="font-size: 11px; color: var(--text-muted);">${escapeHtml(sslText)}</td>
+          <td style="font-family: var(--font-mono); font-weight: 700; color: var(--color-up);">${escapeHtml(uptimeStr)}</td>
           <td>${ticksHtml}</td>
           <td style="text-align: right;" onclick="event.stopPropagation()">
             <button class="btn-card-action" onclick="window.app.triggerPing(${m.id})">PING</button>
@@ -902,7 +940,8 @@ class NOCDashboard {
     const currentVal = this.groupFilter;
     let html = `<option value="ALL">All Groups</option>`;
     groups.forEach(g => {
-      html += `<option value="${g}" ${g === currentVal ? 'selected' : ''}>${g}</option>`;
+      const safeG = escapeHtml(g);
+      html += `<option value="${safeG}" ${g === currentVal ? 'selected' : ''}>${safeG}</option>`;
     });
     select.innerHTML = html;
   }
@@ -922,14 +961,20 @@ class NOCDashboard {
     }
 
     if (list) {
+      const safeName = escapeHtml(monitor.name);
+      const safeDetail = escapeHtml(detailStr);
+      const safeLatency = escapeHtml(latencyStr);
+      const safeTime = escapeHtml(timeStr);
+      const safeStatus = escapeHtml(heartbeat.status);
+
       const entry = document.createElement('div');
       entry.className = 'stream-log-entry';
       entry.innerHTML = `
-        <span class="log-time">${timeStr}</span>
-        <span class="${statusClass}">[${heartbeat.status}]</span>
-        <span class="log-name" title="${monitor.name}">${monitor.name}</span>
-        <span class="log-latency">${latencyStr}</span>
-        <span class="log-detail" title="${detailStr}">${detailStr}</span>
+        <span class="log-time">${safeTime}</span>
+        <span class="${statusClass}">[${safeStatus}]</span>
+        <span class="log-name" title="${safeName}">${safeName}</span>
+        <span class="log-latency">${safeLatency}</span>
+        <span class="log-detail" title="${safeDetail}">${safeDetail}</span>
       `;
       list.prepend(entry);
 
@@ -1046,12 +1091,12 @@ class NOCDashboard {
           const sslDisp = h.ssl_days_remaining !== null ? `${h.ssl_days_remaining}d` : '-';
           return `
             <tr>
-              <td style="font-family: var(--font-mono); color: var(--text-dim);">${time}</td>
-              <td class="${statusColor}" style="font-weight: 700;">${h.status}</td>
-              <td style="font-family: var(--font-mono);">${h.status_code || '-'}</td>
+              <td style="font-family: var(--font-mono); color: var(--text-dim);">${escapeHtml(time)}</td>
+              <td class="${statusColor}" style="font-weight: 700;">${escapeHtml(h.status)}</td>
+              <td style="font-family: var(--font-mono);">${escapeHtml(h.status_code || '-')}</td>
               <td style="font-family: var(--font-mono);">${h.response_time_ms ? Math.round(h.response_time_ms) + 'ms' : '-'}</td>
-              <td style="color: var(--text-muted);">${sslDisp}</td>
-              <td style="color: var(--text-dim);">${h.error_message || 'OK (Probe Successful)'}</td>
+              <td style="color: var(--text-muted);">${escapeHtml(sslDisp)}</td>
+              <td style="color: var(--text-dim);">${escapeHtml(h.error_message || 'OK (Probe Successful)')}</td>
             </tr>
           `;
         }).join('');
@@ -1332,7 +1377,7 @@ class NOCDashboard {
     if (select) {
       let html = `<option value="all">All Targets (Executive Overview)</option>`;
       this.monitors.forEach(m => {
-        html += `<option value="${m.id}">${m.name} (${m.url})</option>`;
+        html += `<option value="${Number(m.id)}">${escapeHtml(m.name)} (${escapeHtml(m.url)})</option>`;
       });
       select.innerHTML = html;
     }
@@ -1381,20 +1426,25 @@ class NOCDashboard {
           const sslText = item.ssl_days_remaining !== null ? `${item.ssl_days_remaining}d` : 'N/A';
           const downtimeMin = item.total_downtime_seconds > 0 ? `${Math.round(item.total_downtime_seconds / 60)}m` : '0m';
 
+          const safeItemName = escapeHtml(item.name);
+          const safeItemUrl = escapeHtml(item.url);
+          const safeItemGroup = escapeHtml(item.group_tag || 'Production');
+          const safeStatus = escapeHtml(item.current_status);
+
           return `
             <tr>
-              <td><span class="status-pill ${statusClass}">${item.current_status}</span></td>
+              <td><span class="status-pill ${statusClass}">${safeStatus}</span></td>
               <td>
-                <div style="font-weight:700; color:#fff;">${item.name}</div>
-                <div style="font-size:10px; color:var(--text-dim); font-family:var(--font-mono);">${item.url}</div>
+                <div style="font-weight:700; color:#fff;">${safeItemName}</div>
+                <div style="font-size:10px; color:var(--text-dim); font-family:var(--font-mono);">${safeItemUrl}</div>
               </td>
-              <td><span class="group-tag">${item.group_tag || 'Production'}</span></td>
-              <td style="font-family:var(--font-mono);">${item.total_checks}</td>
+              <td><span class="group-tag">${safeItemGroup}</span></td>
+              <td style="font-family:var(--font-mono);">${Number(item.total_checks) || 0}</td>
               <td style="font-family:var(--font-mono); font-weight:800;" class="${uptimeBadgeColor}">${item.uptime_percent}%</td>
               <td style="font-family:var(--font-mono); font-weight:700;" class="text-cyan">${item.avg_latency_ms}ms</td>
               <td style="font-family:var(--font-mono); font-size:10px; color:var(--text-dim);">${item.min_latency_ms}ms / ${item.max_latency_ms}ms</td>
-              <td style="font-size:11px; color:var(--text-muted);">${sslText}</td>
-              <td style="font-family:var(--font-mono);">${item.incident_count} (${downtimeMin})</td>
+              <td style="font-size:11px; color:var(--text-muted);">${escapeHtml(sslText)}</td>
+              <td style="font-family:var(--font-mono);">${Number(item.incident_count) || 0} (${escapeHtml(downtimeMin)})</td>
             </tr>
           `;
         }).join('');
@@ -1415,13 +1465,17 @@ class NOCDashboard {
             const time = new Date(inc.started_at).toLocaleString();
             const dur = inc.duration_seconds ? `${Math.round(inc.duration_seconds / 60)} min (${inc.duration_seconds}s)` : 'Ongoing';
             const isResolved = inc.status === 'RESOLVED';
+            const safeIncName = escapeHtml(inc.monitor_name || 'Target');
+            const safeCause = escapeHtml(inc.cause || 'Target unreachable');
+            const safeStatus = escapeHtml(inc.status);
+
             return `
               <tr>
-                <td style="font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim);">${time}</td>
-                <td style="font-weight:700; color:#fff;">${inc.monitor_name || 'Target'}</td>
-                <td style="font-family:var(--font-mono);">${dur}</td>
-                <td style="color:var(--text-muted);">${inc.cause || 'Target unreachable'}</td>
-                <td><span class="status-pill ${isResolved ? 'status-up' : 'status-down'}">${inc.status}</span></td>
+                <td style="font-family:var(--font-mono); font-size:10.5px; color:var(--text-dim);">${escapeHtml(time)}</td>
+                <td style="font-weight:700; color:#fff;">${safeIncName}</td>
+                <td style="font-family:var(--font-mono);">${escapeHtml(dur)}</td>
+                <td style="color:var(--text-muted);">${safeCause}</td>
+                <td><span class="status-pill ${isResolved ? 'status-up' : 'status-down'}">${safeStatus}</span></td>
               </tr>
             `;
           }).join('');
@@ -1553,7 +1607,7 @@ class NOCDashboard {
       transform: translateY(20px);
       opacity: 0;
     `;
-    toast.innerHTML = `<span>${icon}</span><span>${message}</span>`;
+    toast.innerHTML = `<span>${icon}</span><span>${escapeHtml(message)}</span>`;
     container.appendChild(toast);
 
     requestAnimationFrame(() => {
@@ -1921,43 +1975,52 @@ class NOCDashboard {
       const data = await res.json();
       if (!data.success) return;
 
+      this.rbacGroups = data.groups;
       const tbody = document.getElementById('rbac-groups-tbody');
       if (!tbody) return;
 
-      tbody.innerHTML = data.groups.map(g => `
-        <tr>
-          <td><strong style="color: #fff;">${g.name}</strong></td>
-          <td style="color: #94a3b8; font-size: 11px;">${g.description || ''}</td>
-          <td><span class="badge-role">${g.user_count || 0} users</span></td>
-          <td style="text-align: center;">
-            <input type="checkbox" id="grp-add-${g.id}" ${g.can_add_url ? 'checked' : ''} ${g.name === 'NOC Administrators' ? 'disabled' : ''} />
-          </td>
-          <td style="text-align: center;">
-            <input type="checkbox" id="grp-edit-${g.id}" ${g.can_edit_url ? 'checked' : ''} ${g.name === 'NOC Administrators' ? 'disabled' : ''} />
-          </td>
-          <td style="text-align: center;">
-            <input type="checkbox" id="grp-del-${g.id}" ${g.can_delete_url ? 'checked' : ''} ${g.name === 'NOC Administrators' ? 'disabled' : ''} />
-          </td>
-          <td style="text-align: center;">
-            <input type="checkbox" id="grp-tog-${g.id}" ${g.can_toggle_url ? 'checked' : ''} ${g.name === 'NOC Administrators' ? 'disabled' : ''} />
-          </td>
-          <td>
-            ${g.name === 'NOC Administrators' ? '<span style="font-size: 10px; color: #64748b;">DEFAULT LOCK</span>' : `
-              <button class="btn btn-secondary btn-sm" onclick="window.app.saveGroupPermissions(${g.id}, '${g.name}')">SAVE</button>
-            `}
-          </td>
-        </tr>
-      `).join('');
+      tbody.innerHTML = data.groups.map(g => {
+        const safeName = escapeHtml(g.name);
+        const safeDesc = escapeHtml(g.description || '');
+        const safeId = Number(g.id);
+
+        return `
+          <tr>
+            <td><strong style="color: #fff;">${safeName}</strong></td>
+            <td style="color: #94a3b8; font-size: 11px;">${safeDesc}</td>
+            <td><span class="badge-role">${Number(g.user_count) || 0} users</span></td>
+            <td style="text-align: center;">
+              <input type="checkbox" id="grp-add-${safeId}" ${g.can_add_url ? 'checked' : ''} ${g.name === 'NOC Administrators' ? 'disabled' : ''} />
+            </td>
+            <td style="text-align: center;">
+              <input type="checkbox" id="grp-edit-${safeId}" ${g.can_edit_url ? 'checked' : ''} ${g.name === 'NOC Administrators' ? 'disabled' : ''} />
+            </td>
+            <td style="text-align: center;">
+              <input type="checkbox" id="grp-del-${safeId}" ${g.can_delete_url ? 'checked' : ''} ${g.name === 'NOC Administrators' ? 'disabled' : ''} />
+            </td>
+            <td style="text-align: center;">
+              <input type="checkbox" id="grp-tog-${safeId}" ${g.can_toggle_url ? 'checked' : ''} ${g.name === 'NOC Administrators' ? 'disabled' : ''} />
+            </td>
+            <td>
+              ${g.name === 'NOC Administrators' ? '<span style="font-size: 10px; color: #64748b;">DEFAULT LOCK</span>' : `
+                <button class="btn btn-secondary btn-sm" onclick="window.app.saveGroupPermissions(${safeId})">SAVE</button>
+              `}
+            </td>
+          </tr>
+        `;
+      }).join('');
     } catch (e) {
       console.error('Failed to load RBAC groups:', e);
     }
   }
 
-  async saveGroupPermissions(groupId, groupName) {
+  async saveGroupPermissions(groupId) {
     const can_add_url = document.getElementById(`grp-add-${groupId}`)?.checked ? 1 : 0;
     const can_edit_url = document.getElementById(`grp-edit-${groupId}`)?.checked ? 1 : 0;
     const can_delete_url = document.getElementById(`grp-del-${groupId}`)?.checked ? 1 : 0;
     const can_toggle_url = document.getElementById(`grp-tog-${groupId}`)?.checked ? 1 : 0;
+    const group = this.rbacGroups?.find(x => x.id === groupId);
+    const groupName = group ? group.name : `Group #${groupId}`;
 
     try {
       const res = await this.authFetch(`/api/auth/groups/${groupId}`, {
@@ -1987,23 +2050,31 @@ class NOCDashboard {
 
       const select = document.getElementById('new-user-group');
       if (select && groupsData.groups) {
-        select.innerHTML = groupsData.groups.map(g => `<option value="${g.id}">${g.name}</option>`).join('');
+        select.innerHTML = groupsData.groups.map(g => `<option value="${Number(g.id)}">${escapeHtml(g.name)}</option>`).join('');
       }
 
       const tbody = document.getElementById('rbac-users-tbody');
       if (!tbody || !usersData.users) return;
 
-      tbody.innerHTML = usersData.users.map(u => `
-        <tr>
-          <td><strong style="color: #fff; font-family: var(--font-mono);">${u.username}</strong></td>
-          <td>${u.display_name}</td>
-          <td><span class="badge-role badge-role-${(u.role || 'viewer').toLowerCase()}">${u.group_name || 'Ungrouped'}</span></td>
-          <td><span class="badge-role badge-role-${(u.role || 'viewer').toLowerCase()}">${u.role}</span></td>
-          <td>${u.role === 'ADMIN' || u.can_add_url ? '✅ Allowed' : '❌ Denied'}</td>
-          <td>${u.role === 'ADMIN' || u.can_edit_url ? '✅ Allowed' : '❌ Denied'}</td>
-          <td><span style="color: #34d399; font-size: 11px;">ACTIVE</span></td>
-        </tr>
-      `).join('');
+      tbody.innerHTML = usersData.users.map(u => {
+        const safeUname = escapeHtml(u.username);
+        const safeDisplay = escapeHtml(u.display_name);
+        const safeGroupName = escapeHtml(u.group_name || 'Ungrouped');
+        const safeRole = escapeHtml(u.role);
+        const roleClass = (u.role || 'viewer').toLowerCase().replace(/[^a-z0-9_-]/g, '');
+
+        return `
+          <tr>
+            <td><strong style="color: #fff; font-family: var(--font-mono);">${safeUname}</strong></td>
+            <td>${safeDisplay}</td>
+            <td><span class="badge-role badge-role-${roleClass}">${safeGroupName}</span></td>
+            <td><span class="badge-role badge-role-${roleClass}">${safeRole}</span></td>
+            <td>${u.role === 'ADMIN' || u.can_add_url ? '✅ Allowed' : '❌ Denied'}</td>
+            <td>${u.role === 'ADMIN' || u.can_edit_url ? '✅ Allowed' : '❌ Denied'}</td>
+            <td><span style="color: #34d399; font-size: 11px;">ACTIVE</span></td>
+          </tr>
+        `;
+      }).join('');
     } catch (e) {
       console.error('Failed to load users:', e);
     }
@@ -2045,15 +2116,23 @@ class NOCDashboard {
       const tbody = document.getElementById('rbac-audit-tbody');
       if (!tbody) return;
 
-      tbody.innerHTML = data.auditLogs.map(log => `
-        <tr>
-          <td style="font-family: var(--font-mono); font-size: 10.5px; color: #94a3b8;">${log.timestamp}</td>
-          <td><strong style="color: #fff;">${log.username}</strong></td>
-          <td><span class="badge-role" style="color: #a78bfa; border: 1px solid rgba(168,85,247,0.3);">${log.action}</span></td>
-          <td style="font-size: 11.5px; color: #cbd5e1;">${log.details || ''}</td>
-          <td style="font-family: var(--font-mono); font-size: 10px; color: #64748b;">${log.ip_address || '-'}</td>
-        </tr>
-      `).join('');
+      tbody.innerHTML = data.auditLogs.map(log => {
+        const safeTime = escapeHtml(log.timestamp);
+        const safeUname = escapeHtml(log.username);
+        const safeAction = escapeHtml(log.action);
+        const safeDetails = escapeHtml(log.details || '');
+        const safeIp = escapeHtml(log.ip_address || '-');
+
+        return `
+          <tr>
+            <td style="font-family: var(--font-mono); font-size: 10.5px; color: #94a3b8;">${safeTime}</td>
+            <td><strong style="color: #fff;">${safeUname}</strong></td>
+            <td><span class="badge-role" style="color: #a78bfa; border: 1px solid rgba(168,85,247,0.3);">${safeAction}</span></td>
+            <td style="font-size: 11.5px; color: #cbd5e1;">${safeDetails}</td>
+            <td style="font-family: var(--font-mono); font-size: 10px; color: #64748b;">${safeIp}</td>
+          </tr>
+        `;
+      }).join('');
     } catch (e) {
       console.error('Failed to load audit logs:', e);
     }

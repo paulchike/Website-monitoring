@@ -14,6 +14,16 @@ const {
 
 const router = express.Router();
 
+// Helper to validate that a URL strictly uses http: or https: protocol (blocks javascript:, data:, etc.)
+function isValidHttpUrl(string) {
+  try {
+    const parsed = new URL(string);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch (_) {
+    return false;
+  }
+}
+
 // Attach user session to all incoming requests
 router.use(authenticate);
 
@@ -47,6 +57,9 @@ router.post('/auth/login', (req, res) => {
 
     const token = generateToken(user);
     logAudit(req, 'LOGIN', user.id, `User ${user.username} logged in successfully`);
+
+    // Set HttpOnly, SameSite=Lax cookie to protect session token from script access (XSS defense)
+    res.setHeader('Set-Cookie', `noc_token=${token}; Path=/; HttpOnly; SameSite=Lax`);
 
     res.json({
       success: true,
@@ -102,6 +115,7 @@ router.post('/auth/logout', (req, res) => {
   if (req.user) {
     logAudit(req, 'LOGOUT', req.user.id, `User ${req.user.username} logged out`);
   }
+  res.setHeader('Set-Cookie', 'noc_token=; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly; SameSite=Lax');
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
@@ -173,17 +187,27 @@ router.post('/auth/users', requireAuth, requirePermission('can_manage_users'), (
       return res.status(400).json({ success: false, error: 'Username, password and display name required' });
     }
 
-    const existing = queries.getUserByUsername.get(username.trim().toLowerCase());
+    const cleanUsername = username.trim().toLowerCase();
+    if (!/^[a-zA-Z0-9_.-]{3,32}$/.test(cleanUsername)) {
+      return res.status(400).json({ success: false, error: 'Invalid username: must be 3-32 alphanumeric characters (. _ - allowed)' });
+    }
+
+    const cleanDisplayName = display_name.trim().replace(/[<>]/g, '');
+    if (!cleanDisplayName) {
+      return res.status(400).json({ success: false, error: 'Invalid display name' });
+    }
+
+    const existing = queries.getUserByUsername.get(cleanUsername);
     if (existing) {
       return res.status(400).json({ success: false, error: 'Username is already taken' });
     }
 
     const { hash, salt } = hashPassword(password);
     const result = queries.createUser.run({
-      username: username.trim().toLowerCase(),
+      username: cleanUsername,
       password_hash: hash,
       salt: salt,
-      display_name: display_name.trim(),
+      display_name: cleanDisplayName,
       email: email.trim(),
       role: role.toUpperCase(),
       group_id: Number(group_id) || 2,
@@ -191,7 +215,7 @@ router.post('/auth/users', requireAuth, requirePermission('can_manage_users'), (
     });
 
     const newId = result.lastInsertRowid;
-    logAudit(req, 'CREATE_USER', newId, `Created user ${username} with role ${role}`);
+    logAudit(req, 'CREATE_USER', newId, `Created user ${cleanUsername} with role ${role}`);
     res.status(201).json({ success: true, user: queries.getUserById.get(newId) });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -219,9 +243,11 @@ router.put('/auth/users/:id', requireAuth, requirePermission('can_manage_users')
       password = null
     } = req.body;
 
+    const cleanDisplayName = display_name ? display_name.trim().replace(/[<>]/g, '') : existing.display_name;
+
     queries.updateUser.run({
       id: userId,
-      display_name: display_name.trim(),
+      display_name: cleanDisplayName,
       email: email ? email.trim() : '',
       role: role.toUpperCase(),
       group_id: Number(group_id),
@@ -519,6 +545,10 @@ router.post('/monitors', requireAuth, requirePermission('can_add_url'), (req, re
       return res.status(400).json({ success: false, error: 'Name and URL are required' });
     }
 
+    if (!isValidHttpUrl(url.trim())) {
+      return res.status(400).json({ success: false, error: 'Invalid URL: Target URL must begin with http:// or https://' });
+    }
+
     const result = queries.createMonitor.run({
       name: name.trim(),
       url: url.trim(),
@@ -572,6 +602,10 @@ router.put('/monitors/:id', requireAuth, requirePermission('can_edit_url'), (req
       is_active = existing.is_active,
       custom_headers = existing.custom_headers
     } = req.body;
+
+    if (url && !isValidHttpUrl(url.trim())) {
+      return res.status(400).json({ success: false, error: 'Invalid URL: Target URL must begin with http:// or https://' });
+    }
 
     queries.updateMonitor.run({
       id: monitorId,

@@ -15,6 +15,33 @@ const PORT = process.env.PORT || 3000;
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Defense-in-depth: HTTP Security Headers & Content-Security-Policy (CSP) to block XSS
+app.use((req, res, next) => {
+  // Content-Security-Policy (CSP): Restrict script, frame, connection, and object sources
+  res.setHeader(
+    'Content-Security-Policy',
+    "default-src 'self'; " +
+    "script-src 'self' 'unsafe-inline'; " +
+    "style-src 'self' 'unsafe-inline'; " +
+    "img-src 'self' data:; " +
+    "connect-src 'self' ws: wss:; " +
+    "font-src 'self' data:; " +
+    "object-src 'none'; " +
+    "base-uri 'self'; " +
+    "form-action 'self'; " +
+    "frame-ancestors 'self';"
+  );
+  // Prevent MIME-sniffing
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  // Prevent Clickjacking / UI Redressing
+  res.setHeader('X-Frame-Options', 'SAMEORIGIN');
+  // Referrer Policy
+  res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+  // Legacy XSS Protection
+  res.setHeader('X-XSS-Protection', '1; mode=block');
+  next();
+});
+
 // Health check endpoint for self-monitoring
 app.get('/health', (req, res) => {
   res.json({

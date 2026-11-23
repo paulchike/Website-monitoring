@@ -506,6 +506,16 @@
       // Initial state based on current path
       setRole(currentRole);
 
+      function escapeHtml(str) {
+        if (str === null || str === undefined) return '';
+        return String(str)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
       // Handle Submit
       loginForm.addEventListener('submit', async (e) => {
         e.preventDefault();
@@ -530,7 +540,7 @@
             localStorage.setItem('noc_token', data.token);
 
             loginAlert.className = 'login-alert login-alert-success';
-            loginAlert.innerHTML = `✅ <strong>Authenticated!</strong> Welcome ${data.user.displayName}. Activating profile on dashboard...`;
+            loginAlert.innerHTML = `✅ <strong>Authenticated!</strong> Welcome ${escapeHtml(data.user.displayName)}. Activating profile on dashboard...`;
             loginAlert.classList.remove('hidden');
 
             setTimeout(() => {
@@ -538,14 +548,14 @@
             }, 500);
           } else {
             loginAlert.className = 'login-alert login-alert-error';
-            loginAlert.innerHTML = `⚠️ ${data.error || 'Authentication failed. Please verify credentials.'}`;
+            loginAlert.innerHTML = `⚠️ ${escapeHtml(data.error || 'Authentication failed. Please verify credentials.')}`;
             loginAlert.classList.remove('hidden');
             btnSubmit.disabled = false;
             btnText.textContent = 'Authenticate Session';
           }
         } catch (err) {
           loginAlert.className = 'login-alert login-alert-error';
-          loginAlert.innerHTML = `❌ Connection error: ${err.message}`;
+          loginAlert.innerHTML = `❌ Connection error: ${escapeHtml(err.message)}`;
           loginAlert.classList.remove('hidden');
           btnSubmit.disabled = false;
           btnText.textContent = 'Authenticate Session';
