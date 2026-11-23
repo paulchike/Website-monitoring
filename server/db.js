@@ -177,8 +177,25 @@ const queries = {
     FROM heartbeats 
     WHERE monitor_id = ? AND timestamp >= datetime('now', ?)
   `),
+  getUptimeStats: db.prepare(`
+    SELECT 
+      COUNT(*) as total,
+      SUM(CASE WHEN status = 'UP' OR status = 'DEGRADED' THEN 1 ELSE 0 END) as successful,
+      AVG(response_time_ms) as avg_latency
+    FROM heartbeats
+    WHERE monitor_id = ? AND timestamp >= datetime('now', ?)
+  `),
+  getIncidentsForMonitor: db.prepare(`
+    SELECT * FROM incidents WHERE monitor_id = ? ORDER BY started_at DESC LIMIT ?
+  `),
 
   // Incidents
+  getIncidentById: db.prepare(`
+    SELECT i.*, m.name as monitor_name, m.url as monitor_url, m.group_tag
+    FROM incidents i
+    LEFT JOIN monitors m ON i.monitor_id = m.id
+    WHERE i.id = ?
+  `),
   getActiveIncidentForMonitor: db.prepare(`
     SELECT * FROM incidents WHERE monitor_id = ? AND status = 'ACTIVE' LIMIT 1
   `),
@@ -209,6 +226,41 @@ const queries = {
     FROM incidents i
     JOIN monitors m ON i.monitor_id = m.id
     WHERE i.status = 'ACTIVE'
+    ORDER BY i.started_at DESC
+  `),
+
+  // Reports & SLA Aggregations
+  getReportStatsForMonitor: db.prepare(`
+    SELECT 
+      COUNT(*) as total_checks,
+      SUM(CASE WHEN status = 'UP' THEN 1 ELSE 0 END) as up_checks,
+      SUM(CASE WHEN status = 'DEGRADED' THEN 1 ELSE 0 END) as degraded_checks,
+      SUM(CASE WHEN status = 'DOWN' THEN 1 ELSE 0 END) as down_checks,
+      AVG(CASE WHEN response_time_ms > 0 THEN response_time_ms ELSE NULL END) as avg_latency,
+      MIN(CASE WHEN response_time_ms > 0 THEN response_time_ms ELSE NULL END) as min_latency,
+      MAX(CASE WHEN response_time_ms > 0 THEN response_time_ms ELSE NULL END) as max_latency
+    FROM heartbeats
+    WHERE monitor_id = ? AND timestamp >= datetime('now', ?)
+  `),
+  getReportIncidentsForMonitor: db.prepare(`
+    SELECT COUNT(*) as incident_count,
+           COALESCE(SUM(duration_seconds), 0) as total_downtime_seconds
+    FROM incidents
+    WHERE monitor_id = ? AND (started_at >= datetime('now', ?) OR status = 'ACTIVE')
+  `),
+  getReportIncidentsAll: db.prepare(`
+    SELECT i.*, m.name as monitor_name, m.url as monitor_url, m.group_tag
+    FROM incidents i
+    JOIN monitors m ON i.monitor_id = m.id
+    WHERE (i.started_at >= datetime('now', ?) OR i.status = 'ACTIVE')
+    ORDER BY i.started_at DESC
+  `),
+  getReportIncidentsByMonitor: db.prepare(`
+    SELECT i.*, m.name as monitor_name, m.url as monitor_url, m.group_tag
+    FROM incidents i
+    JOIN monitors m ON i.monitor_id = m.id
+    WHERE (i.started_at >= datetime('now', ?) OR i.status = 'ACTIVE')
+      AND i.monitor_id = ?
     ORDER BY i.started_at DESC
   `),
 
@@ -295,12 +347,25 @@ const queries = {
   // System Settings (SMTP, Notifications)
   getSetting: db.prepare(`SELECT value FROM settings WHERE key = ?`),
   getAllSettings: db.prepare(`SELECT key, value FROM settings`),
-  setSetting: db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`)
+  setSetting: db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)`),
+
+  // Database Initialization & Seeding Helpers
+  getMonitorCount: db.prepare(`SELECT COUNT(*) as count FROM monitors`),
+  getUserGroupCount: db.prepare(`SELECT COUNT(*) as count FROM user_groups`),
+  getUserCount: db.prepare(`SELECT COUNT(*) as count FROM users`),
+  getGroupByName: db.prepare(`SELECT id FROM user_groups WHERE name = ?`),
+  insertSeedHeartbeat: db.prepare(`
+    INSERT INTO heartbeats (
+      monitor_id, status, status_code, response_time_ms,
+      dns_time_ms, tcp_time_ms, tls_time_ms, ttfb_ms,
+      error_message, ssl_days_remaining, ssl_valid, ssl_issuer, timestamp
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `)
 };
 
 // Seed default monitors and realistic historical data if database is empty
 function seedDatabaseIfEmpty() {
-  const count = db.prepare('SELECT COUNT(*) as count FROM monitors').get().count;
+  const count = queries.getMonitorCount.get().count;
   if (count > 0) return;
 
   console.log('[DB] Seeding default NOC monitoring targets...');
@@ -431,13 +496,7 @@ function seedDatabaseIfEmpty() {
           responseTime = 480 + Math.random() * 200;
         }
 
-        db.prepare(`
-          INSERT INTO heartbeats (
-            monitor_id, status, status_code, response_time_ms,
-            dns_time_ms, tcp_time_ms, tls_time_ms, ttfb_ms,
-            error_message, ssl_days_remaining, ssl_valid, ssl_issuer, timestamp
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
+        queries.insertSeedHeartbeat.run(
           monitorId,
           status,
           statusCode,
@@ -462,19 +521,19 @@ function seedDatabaseIfEmpty() {
 
 // Seed default RBAC groups and initial users if empty
 function seedAuthIfEmpty() {
-  const groupCount = db.prepare('SELECT COUNT(*) as count FROM user_groups').get().count;
+  const groupCount = queries.getUserGroupCount.get().count;
   if (groupCount === 0) {
     console.log('[DB] Seeding default RBAC user groups...');
-    db.prepare(`
+    db.exec(`
       INSERT INTO user_groups (name, description, can_add_url, can_edit_url, can_delete_url, can_toggle_url, can_manage_users)
       VALUES 
         ('NOC Administrators', 'Full control: Add, edit, and delete monitoring URLs, manage users and roles', 1, 1, 1, 1, 1),
         ('Operations Engineers', 'Operations team: Pause/resume, edit settings, create and delete monitoring targets', 1, 1, 1, 1, 0),
         ('Stakeholders & Viewers', 'Read-only access: View status dashboards, wallboards, and SLA metrics', 0, 0, 0, 0, 0)
-    `).run();
+    `);
   }
 
-  const userCount = db.prepare('SELECT COUNT(*) as count FROM users').get().count;
+  const userCount = queries.getUserCount.get().count;
   if (userCount === 0) {
     console.log('[DB] Seeding default RBAC users...');
     const adminSalt = crypto.randomBytes(16).toString('hex');
@@ -486,9 +545,9 @@ function seedAuthIfEmpty() {
     const viewSalt = crypto.randomBytes(16).toString('hex');
     const viewHash = crypto.scryptSync('viewer123', viewSalt, 64).toString('hex');
 
-    const adminGroup = db.prepare(`SELECT id FROM user_groups WHERE name = 'NOC Administrators'`).get();
-    const opGroup = db.prepare(`SELECT id FROM user_groups WHERE name = 'Operations Engineers'`).get();
-    const viewGroup = db.prepare(`SELECT id FROM user_groups WHERE name = 'Stakeholders & Viewers'`).get();
+    const adminGroup = queries.getGroupByName.get('NOC Administrators');
+    const opGroup = queries.getGroupByName.get('Operations Engineers');
+    const viewGroup = queries.getGroupByName.get('Stakeholders & Viewers');
 
     queries.createUser.run({
       username: 'admin',

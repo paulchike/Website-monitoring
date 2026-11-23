@@ -119,6 +119,9 @@ router.get('/auth/groups', (req, res) => {
 router.put('/auth/groups/:id', requireAuth, requirePermission('can_manage_users'), (req, res) => {
   try {
     const groupId = Number(req.params.id);
+    if (!Number.isInteger(groupId) || groupId <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid group ID: must be a positive integer' });
+    }
     const existing = queries.getGroupById.get(groupId);
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Group not found' });
@@ -199,6 +202,9 @@ router.post('/auth/users', requireAuth, requirePermission('can_manage_users'), (
 router.put('/auth/users/:id', requireAuth, requirePermission('can_manage_users'), (req, res) => {
   try {
     const userId = Number(req.params.id);
+    if (!Number.isInteger(userId) || userId <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid user ID: must be a positive integer' });
+    }
     const existing = queries.getUserById.get(userId);
     if (!existing) {
       return res.status(404).json({ success: false, error: 'User not found' });
@@ -408,15 +414,7 @@ router.post('/notifications/test', requireAuth, requirePermission('can_edit_url'
 
 // Helper to compute uptime percentage
 function calculateUptime(monitorId, intervalClause) {
-  const stats = db.prepare(`
-    SELECT 
-      COUNT(*) as total,
-      SUM(CASE WHEN status = 'UP' OR status = 'DEGRADED' THEN 1 ELSE 0 END) as successful,
-      AVG(response_time_ms) as avg_latency
-    FROM heartbeats
-    WHERE monitor_id = ? AND timestamp >= datetime('now', ?)
-  `).get(monitorId, intervalClause);
-
+  const stats = queries.getUptimeStats.get(monitorId, intervalClause) || {};
   const total = stats.total || 0;
   const successful = stats.successful || 0;
   const uptimePercent = total > 0 ? (successful / total) * 100 : 100;
@@ -461,6 +459,10 @@ router.get('/monitors', (req, res) => {
 router.get('/monitors/:id', (req, res) => {
   try {
     const monitorId = Number(req.params.id);
+    if (!Number.isInteger(monitorId) || monitorId <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid monitor ID: must be a positive integer' });
+    }
+
     const monitor = queries.getMonitorById.get(monitorId);
     if (!monitor) {
       return res.status(404).json({ success: false, error: 'Monitor not found' });
@@ -472,9 +474,7 @@ router.get('/monitors/:id', (req, res) => {
     const uptime7d = calculateUptime(monitorId, '-7 days');
     const uptime30d = calculateUptime(monitorId, '-30 days');
     const activeIncident = queries.getActiveIncidentForMonitor.get(monitorId) || null;
-    const incidents = db.prepare(`
-      SELECT * FROM incidents WHERE monitor_id = ? ORDER BY started_at DESC LIMIT 15
-    `).all(monitorId);
+    const incidents = queries.getIncidentsForMonitor.all(monitorId, 15);
 
     res.json({
       success: true,
@@ -551,6 +551,9 @@ router.post('/monitors', requireAuth, requirePermission('can_add_url'), (req, re
 router.put('/monitors/:id', requireAuth, requirePermission('can_edit_url'), (req, res) => {
   try {
     const monitorId = Number(req.params.id);
+    if (!Number.isInteger(monitorId) || monitorId <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid monitor ID: must be a positive integer' });
+    }
     const existing = queries.getMonitorById.get(monitorId);
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Monitor not found' });
@@ -601,6 +604,9 @@ router.put('/monitors/:id', requireAuth, requirePermission('can_edit_url'), (req
 router.delete('/monitors/:id', requireAuth, requirePermission('can_delete_url'), (req, res) => {
   try {
     const monitorId = Number(req.params.id);
+    if (!Number.isInteger(monitorId) || monitorId <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid monitor ID: must be a positive integer' });
+    }
     const existing = queries.getMonitorById.get(monitorId);
     if (!existing) {
       return res.status(404).json({ success: false, error: 'Monitor not found' });
@@ -622,6 +628,14 @@ router.delete('/monitors/:id', requireAuth, requirePermission('can_delete_url'),
 router.post('/monitors/:id/toggle', requireAuth, requirePermission('can_toggle_url'), (req, res) => {
   try {
     const monitorId = Number(req.params.id);
+    if (!Number.isInteger(monitorId) || monitorId <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid monitor ID: must be a positive integer' });
+    }
+    const existing = queries.getMonitorById.get(monitorId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Monitor not found' });
+    }
+
     queries.toggleMonitorActive.run(monitorId);
     const updated = queries.getMonitorById.get(monitorId);
     scheduler.restartMonitor(monitorId);
@@ -639,6 +653,9 @@ router.post('/monitors/:id/toggle', requireAuth, requirePermission('can_toggle_u
 router.post('/monitors/:id/check', async (req, res) => {
   try {
     const monitorId = Number(req.params.id);
+    if (!Number.isInteger(monitorId) || monitorId <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid monitor ID: must be a positive integer' });
+    }
     const monitor = queries.getMonitorById.get(monitorId);
     if (!monitor) {
       return res.status(404).json({ success: false, error: 'Monitor not found' });
@@ -679,9 +696,17 @@ router.get('/incidents', (req, res) => {
 router.post('/incidents/:id/acknowledge', (req, res) => {
   try {
     const incidentId = Number(req.params.id);
-    const operator = req.body.operator || 'NOC Operator';
+    if (!Number.isInteger(incidentId) || incidentId <= 0) {
+      return res.status(400).json({ success: false, error: 'Invalid incident ID: must be a positive integer' });
+    }
+    const existing = queries.getIncidentById.get(incidentId);
+    if (!existing) {
+      return res.status(404).json({ success: false, error: 'Incident not found' });
+    }
+
+    const operator = req.body.operator || (req.user && req.user.displayName) || 'NOC Operator';
     queries.acknowledgeIncident.run(operator, incidentId);
-    const updated = db.prepare('SELECT * FROM incidents WHERE id = ?').get(incidentId);
+    const updated = queries.getIncidentById.get(incidentId);
 
     scheduler.broadcast('incident_acknowledged', updated);
     res.json({ success: true, incident: updated });
@@ -749,18 +774,24 @@ router.get('/summary', (req, res) => {
 // GET /api/reports (Comprehensive SLA, Uptime & Latency Telemetry Reports with CSV export)
 router.get('/reports', (req, res) => {
   try {
-    const rangeParam = req.query.range || '24h';
-    let intervalClause = '-24 hours';
-    let rangeLabel = 'Last 24 Hours';
-    if (rangeParam === '7d') {
-      intervalClause = '-7 days';
-      rangeLabel = 'Last 7 Days';
-    } else if (rangeParam === '30d') {
-      intervalClause = '-30 days';
-      rangeLabel = 'Last 30 Days';
-    }
+    const RANGE_CONFIG = {
+      '24h': { interval: '-24 hours', label: 'Last 24 Hours' },
+      '7d': { interval: '-7 days', label: 'Last 7 Days' },
+      '30d': { interval: '-30 days', label: 'Last 30 Days' }
+    };
+    const rangeParam = (typeof req.query.range === 'string' && RANGE_CONFIG[req.query.range])
+      ? req.query.range
+      : '24h';
+    const { interval: intervalClause, label: rangeLabel } = RANGE_CONFIG[rangeParam];
 
-    const monitorId = req.query.monitor_id && req.query.monitor_id !== 'all' ? Number(req.query.monitor_id) : null;
+    let monitorId = null;
+    if (req.query.monitor_id && req.query.monitor_id !== 'all') {
+      const parsedId = Number(req.query.monitor_id);
+      if (!Number.isInteger(parsedId) || parsedId <= 0) {
+        return res.status(400).json({ success: false, error: 'Invalid monitor_id: must be a positive integer or "all"' });
+      }
+      monitorId = parsedId;
+    }
 
     // Fetch target monitors
     let targetMonitors = [];
@@ -772,27 +803,9 @@ router.get('/reports', (req, res) => {
     }
 
     const reportItems = targetMonitors.map(m => {
-      const stats = db.prepare(`
-        SELECT 
-          COUNT(*) as total_checks,
-          SUM(CASE WHEN status = 'UP' THEN 1 ELSE 0 END) as up_checks,
-          SUM(CASE WHEN status = 'DEGRADED' THEN 1 ELSE 0 END) as degraded_checks,
-          SUM(CASE WHEN status = 'DOWN' THEN 1 ELSE 0 END) as down_checks,
-          AVG(CASE WHEN response_time_ms > 0 THEN response_time_ms ELSE NULL END) as avg_latency,
-          MIN(CASE WHEN response_time_ms > 0 THEN response_time_ms ELSE NULL END) as min_latency,
-          MAX(CASE WHEN response_time_ms > 0 THEN response_time_ms ELSE NULL END) as max_latency
-        FROM heartbeats
-        WHERE monitor_id = ? AND timestamp >= datetime('now', ?)
-      `).get(m.id, intervalClause);
-
+      const stats = queries.getReportStatsForMonitor.get(m.id, intervalClause) || {};
       const latest = queries.getLatestHeartbeatForMonitor.get(m.id);
-
-      const incidents = db.prepare(`
-        SELECT COUNT(*) as incident_count,
-               COALESCE(SUM(duration_seconds), 0) as total_downtime_seconds
-        FROM incidents
-        WHERE monitor_id = ? AND (started_at >= datetime('now', ?) OR status = 'ACTIVE')
-      `).get(m.id, intervalClause);
+      const incidents = queries.getReportIncidentsForMonitor.get(m.id, intervalClause) || {};
 
       const total = stats.total_checks || 0;
       const up = stats.up_checks || 0;
@@ -823,15 +836,10 @@ router.get('/reports', (req, res) => {
       };
     });
 
-    // Recent Incidents list in range
-    const incidentsList = db.prepare(`
-      SELECT i.*, m.name as monitor_name, m.url as monitor_url, m.group_tag
-      FROM incidents i
-      JOIN monitors m ON i.monitor_id = m.id
-      WHERE (i.started_at >= datetime('now', ?) OR i.status = 'ACTIVE')
-        ${monitorId ? 'AND i.monitor_id = ?' : ''}
-      ORDER BY i.started_at DESC
-    `).all(...(monitorId ? [intervalClause, monitorId] : [intervalClause]));
+    // Recent Incidents list in range (using static parameterized prepared statements)
+    const incidentsList = monitorId
+      ? queries.getReportIncidentsByMonitor.all(intervalClause, monitorId)
+      : queries.getReportIncidentsAll.all(intervalClause);
 
     // Executive summary calculations
     let sumUptime = 0;

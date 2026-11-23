@@ -4,12 +4,12 @@ const { db, queries } = require('./db');
 // Retrieve or generate persistent HMAC secret for session tokens
 function getAuthSecret() {
   try {
-    const existing = db.prepare(`SELECT value FROM settings WHERE key = 'auth_secret'`).get();
+    const existing = queries.getSetting.get('auth_secret');
     if (existing && existing.value) {
       return existing.value;
     }
     const newSecret = crypto.randomBytes(32).toString('hex');
-    db.prepare(`INSERT OR REPLACE INTO settings (key, value) VALUES ('auth_secret', ?)`).run(newSecret);
+    queries.setSetting.run('auth_secret', newSecret);
     return newSecret;
   } catch (e) {
     return process.env.AUTH_SECRET || 'noc-secure-fallback-secret-2026';
