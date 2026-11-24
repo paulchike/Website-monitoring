@@ -1,22 +1,248 @@
 const crypto = require('crypto');
 const { db, queries } = require('./db');
 
-// Retrieve or generate persistent HMAC secret for session tokens
-function getAuthSecret() {
-  try {
-    const existing = queries.getSetting.get('auth_secret');
-    if (existing && existing.value) {
-      return existing.value;
+// Known weak, default, or predictable secrets that must never be used in production
+const WEAK_SECRETS_BLOCKLIST = new Set([
+  'secret',
+  'jwt_secret',
+  'jwtsecret',
+  'auth_secret',
+  'authsecret',
+  'password',
+  '123456',
+  '12345678',
+  '123456789',
+  'changeme',
+  'admin',
+  'default',
+  'test',
+  'noc-secure-fallback-secret-2026',
+  'noc-secure-fallback-secret',
+  'supersecret',
+  'keyboardcat'
+]);
+
+/**
+ * Validates whether a secret key meets production cryptographic requirements:
+ * 1. String type and non-empty
+ * 2. Minimum 32 characters (256 bits of entropy for HS256, adhering to RFC 7518 §3.2)
+ * 3. Not in known weak secrets blocklist
+ */
+function isCryptographicallySecure(secret) {
+  if (!secret || typeof secret !== 'string') return false;
+  const trimmed = secret.trim();
+  if (trimmed.length < 32) return false;
+
+  const lower = trimmed.toLowerCase();
+  if (WEAK_SECRETS_BLOCKLIST.has(lower)) return false;
+
+  // Reject secrets containing obvious weak words or default tokens
+  const weakKeywords = [
+    'secret',
+    'password',
+    'changeme',
+    'jwt_secret',
+    'jwtsecret',
+    'auth_secret',
+    'authsecret',
+    'supersecret',
+    'keyboardcat',
+    'fallback-secret'
+  ];
+  for (const kw of weakKeywords) {
+    if (lower.includes(kw)) {
+      return false;
     }
-    const newSecret = crypto.randomBytes(32).toString('hex');
-    queries.setSetting.run('auth_secret', newSecret);
-    return newSecret;
-  } catch (e) {
-    return process.env.AUTH_SECRET || 'noc-secure-fallback-secret-2026';
   }
+
+  // Reject low character diversity (e.g. repeated characters or predictable sequences)
+  const uniqueChars = new Set(trimmed).size;
+  if (uniqueChars < 8) return false;
+
+  return true;
 }
 
-const AUTH_SECRET = getAuthSecret();
+/**
+ * Derives a hardened 512-bit key using HKDF-SHA256 if an operator sets a weak key
+ */
+function hardenSecret(rawSecret) {
+  return crypto.hkdfSync(
+    'sha256',
+    Buffer.from(rawSecret, 'utf8'),
+    Buffer.from('pau-noc-jwt-salt-v1', 'utf8'),
+    Buffer.from('jwt-signature-key-hardening', 'utf8'),
+    64
+  ).toString('hex');
+}
+
+/**
+ * Generates a high-entropy 512-bit cryptographically secure random key
+ */
+function generateSecureRandomKey() {
+  return crypto.randomBytes(64).toString('hex');
+}
+
+// Secret state container with rotation support
+let jwtSecretState = {
+  primarySecret: null,
+  previousSecrets: [],
+  source: 'uninitialized'
+};
+
+/**
+ * Resolves the JWT HMAC secret using strict multi-tier hierarchy:
+ * 1. Environment variable JWT_SECRET or AUTH_SECRET
+ * 2. Persisted secret in SQLite settings table (jwt_secret / auth_secret)
+ * 3. Auto-generated 512-bit cryptographically secure random key persisted to DB
+ * 4. Ephemeral in-memory 512-bit random key (if DB write fails; never a static fallback string)
+ */
+function initializeJwtSecret() {
+  const envSecret = process.env.JWT_SECRET || process.env.AUTH_SECRET;
+  let primarySecret = null;
+  let source = 'unknown';
+
+  if (envSecret && envSecret.trim().length > 0) {
+    const trimmed = envSecret.trim();
+    if (isCryptographicallySecure(trimmed)) {
+      primarySecret = trimmed;
+      source = 'environment';
+    } else {
+      console.warn('[Security Warning] JWT_SECRET in environment does not meet 256-bit entropy standards or is in the weak secrets blocklist. Cryptographically hardening secret using HKDF-SHA256.');
+      primarySecret = hardenSecret(trimmed);
+      source = 'environment_hardened';
+    }
+  } else {
+    // Check database settings
+    try {
+      const stored = queries.getSetting.get('jwt_secret') || queries.getSetting.get('auth_secret');
+      if (stored && stored.value && isCryptographicallySecure(stored.value)) {
+        primarySecret = stored.value;
+        source = 'database';
+      } else {
+        // Generate new high-entropy 512-bit key and persist
+        const newSecret = generateSecureRandomKey();
+        try {
+          queries.setSetting.run('jwt_secret', newSecret);
+          primarySecret = newSecret;
+          source = 'generated_persisted';
+        } catch (dbWriteErr) {
+          primarySecret = newSecret;
+          source = 'ephemeral';
+          console.warn('[Security Alert] Unable to persist generated JWT secret to database:', dbWriteErr.message);
+        }
+      }
+    } catch (dbReadErr) {
+      primarySecret = generateSecureRandomKey();
+      source = 'ephemeral';
+      console.warn('[Security Alert] Database unavailable during JWT secret initialization. Using ephemeral 512-bit key:', dbReadErr.message);
+    }
+  }
+
+  // Load previous secrets for zero-downtime key rotation
+  const previousSecrets = [];
+  const envPrev = process.env.JWT_PREVIOUS_SECRETS || process.env.AUTH_PREVIOUS_SECRETS;
+  if (envPrev && typeof envPrev === 'string') {
+    envPrev.split(',').forEach(s => {
+      const trimmed = s.trim();
+      if (trimmed.length > 0 && trimmed !== primarySecret && !previousSecrets.includes(trimmed)) {
+        previousSecrets.push(trimmed);
+      }
+    });
+  }
+
+  try {
+    const dbPrev = queries.getSetting.get('jwt_previous_secrets');
+    if (dbPrev && dbPrev.value) {
+      try {
+        const parsed = JSON.parse(dbPrev.value);
+        if (Array.isArray(parsed)) {
+          parsed.forEach(s => {
+            if (typeof s === 'string' && s.length > 0 && s !== primarySecret && !previousSecrets.includes(s)) {
+              previousSecrets.push(s);
+            }
+          });
+        }
+      } catch (_) {}
+    }
+  } catch (_) {}
+
+  jwtSecretState = {
+    primarySecret,
+    previousSecrets,
+    source
+  };
+
+  return primarySecret;
+}
+
+// Initialize on module load
+initializeJwtSecret();
+
+/**
+ * Administratively rotates the JWT secret.
+ * Moves current secret to previousSecrets list to ensure zero-downtime for existing user sessions.
+ *
+ * @param {string} [customSecret] Optional custom secret; if omitted, generates a 512-bit random key
+ * @returns {{ success: boolean, source: string, previousSecretsCount: number, rotatedAt: string }}
+ */
+function rotateJwtSecret(customSecret = null) {
+  let newKey = customSecret ? customSecret.trim() : null;
+  let source = 'generated';
+
+  if (newKey) {
+    if (!isCryptographicallySecure(newKey)) {
+      newKey = hardenSecret(newKey);
+      source = 'custom_hardened';
+    } else {
+      source = 'custom';
+    }
+  } else {
+    newKey = generateSecureRandomKey();
+    source = 'generated';
+  }
+
+  const oldSecret = jwtSecretState.primarySecret;
+  const updatedPrevious = [oldSecret, ...jwtSecretState.previousSecrets.filter(s => s !== oldSecret)].slice(0, 5);
+
+  try {
+    queries.setSetting.run('jwt_secret', newKey);
+    queries.setSetting.run('jwt_previous_secrets', JSON.stringify(updatedPrevious));
+  } catch (e) {
+    console.warn('[Security Warning] Failed to persist rotated JWT secret to database:', e.message);
+  }
+
+  jwtSecretState = {
+    primarySecret: newKey,
+    previousSecrets: updatedPrevious,
+    source: `rotated_${source}`
+  };
+
+  return {
+    success: true,
+    source: jwtSecretState.source,
+    previousSecretsCount: updatedPrevious.length,
+    rotatedAt: new Date().toISOString()
+  };
+}
+
+/**
+ * Returns security metadata about the active JWT secret configuration.
+ * Raw secret keys are NEVER exposed in this inspection response.
+ */
+function getJwtSecurityDetails() {
+  const secret = jwtSecretState.primarySecret || '';
+  return {
+    algorithm: 'HS256',
+    token_format: 'RFC-7519',
+    key_source: jwtSecretState.source,
+    key_length_chars: secret.length,
+    key_entropy_bits: Math.min(512, secret.length * 8),
+    is_secure: isCryptographicallySecure(secret),
+    has_active_secret: Boolean(secret && secret.length >= 32),
+    rotation_keys_configured: jwtSecretState.previousSecrets.length,
+    session_duration_days: 7
+  };
+}
 
 // Password hashing with native crypto.scrypt
 function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
@@ -27,46 +253,129 @@ function hashPassword(password, salt = crypto.randomBytes(16).toString('hex')) {
 function verifyPassword(password, hash, salt) {
   try {
     const testHash = crypto.scryptSync(password, salt, 64).toString('hex');
-    return crypto.timingSafeEqual(Buffer.from(hash, 'hex'), Buffer.from(testHash, 'hex'));
+    const hashBuf = Buffer.from(hash, 'hex');
+    const testBuf = Buffer.from(testHash, 'hex');
+    if (hashBuf.length !== testBuf.length) return false;
+    return crypto.timingSafeEqual(hashBuf, testBuf);
   } catch (err) {
     return false;
   }
 }
 
-// Lightweight, zero-dependency signed session tokens (HMAC-SHA256)
+// Standard RFC 7519 JWT header for HMAC-SHA256
+const JWT_HEADER_B64 = Buffer.from(JSON.stringify({ alg: 'HS256', typ: 'JWT' })).toString('base64url');
+
+/**
+ * Issues an RFC 7519 standard JWT token signed with the active 512-bit HMAC secret
+ * @param {Object} user
+ * @returns {string} Standard 3-segment JWT (header.payload.signature)
+ */
 function generateToken(user) {
+  const nowSeconds = Math.floor(Date.now() / 1000);
+  const expSeconds = nowSeconds + (7 * 24 * 60 * 60); // 7 days
+
   const payload = {
+    iss: 'pau-noc-monitor',
+    sub: String(user.id),
     uid: user.id,
     uname: user.username,
     role: user.role,
     gid: user.group_id,
-    exp: Date.now() + 7 * 24 * 60 * 60 * 1000 // 7 days
+    iat: nowSeconds,
+    exp: expSeconds,
+    exp_ms: Date.now() + 7 * 24 * 60 * 60 * 1000
   };
 
-  const str = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto.createHmac('sha256', AUTH_SECRET).update(str).digest('base64url');
-  return `${str}.${signature}`;
+  const payloadStr = Buffer.from(JSON.stringify(payload)).toString('base64url');
+  const signature = crypto
+    .createHmac('sha256', jwtSecretState.primarySecret)
+    .update(`${JWT_HEADER_B64}.${payloadStr}`)
+    .digest('base64url');
+
+  return `${JWT_HEADER_B64}.${payloadStr}.${signature}`;
 }
 
+/**
+ * Verifies a JWT token using constant-time comparison, algorithm verification,
+ * and key rotation support. Handles both RFC 7519 3-segment JWTs and legacy 2-segment tokens.
+ *
+ * @param {string} token
+ * @returns {Object|null} payload or null if invalid/expired
+ */
 function verifyToken(token) {
   if (!token || typeof token !== 'string') return null;
   const parts = token.split('.');
-  if (parts.length !== 2) return null;
-
-  const [payloadStr, signature] = parts;
-  const expectedSig = crypto.createHmac('sha256', AUTH_SECRET).update(payloadStr).digest('base64url');
-
-  if (!crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSig))) {
-    return null;
-  }
+  if (parts.length !== 3 && parts.length !== 2) return null;
 
   try {
-    const payload = JSON.parse(Buffer.from(payloadStr, 'base64url').toString('utf8'));
-    if (payload.exp && Date.now() > payload.exp) {
-      return null; // Expired
+    const isStandardJwt = parts.length === 3;
+    let headerStr = null;
+    let payloadStr = null;
+    let signature = null;
+    let signedContent = null;
+
+    if (isStandardJwt) {
+      [headerStr, payloadStr, signature] = parts;
+
+      // 1. Algorithm Verification: enforce HS256, strictly reject "none" or asymmetric algorithms
+      const header = JSON.parse(Buffer.from(headerStr, 'base64url').toString('utf8'));
+      if (!header || header.alg !== 'HS256' || header.typ !== 'JWT') {
+        return null;
+      }
+      signedContent = `${headerStr}.${payloadStr}`;
+    } else {
+      // Backwards-compatible 2-part legacy token
+      [payloadStr, signature] = parts;
+      signedContent = payloadStr;
     }
+
+    const sigBuf = Buffer.from(signature);
+    const candidateSecrets = [
+      jwtSecretState.primarySecret,
+      ...jwtSecretState.previousSecrets
+    ].filter(Boolean);
+
+    let signatureValid = false;
+    for (const secret of candidateSecrets) {
+      const expectedSig = crypto
+        .createHmac('sha256', secret)
+        .update(signedContent)
+        .digest('base64url');
+      const expBuf = Buffer.from(expectedSig);
+
+      if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) {
+        signatureValid = true;
+        break;
+      }
+    }
+
+    if (!signatureValid) {
+      return null;
+    }
+
+    // 2. Decode and validate payload
+    const payload = JSON.parse(Buffer.from(payloadStr, 'base64url').toString('utf8'));
+
+    // Expiration verification: handles both epoch seconds (standard) and epoch milliseconds
+    const now = Date.now();
+    if (payload.exp) {
+      const expMs = payload.exp < 10000000000 ? payload.exp * 1000 : payload.exp;
+      if (now > expMs) {
+        return null; // Expired
+      }
+    }
+
+    // Clock skew protection: reject tokens issued more than 60 seconds in the future
+    if (payload.iat) {
+      const iatMs = payload.iat < 10000000000 ? payload.iat * 1000 : payload.iat;
+      if (iatMs > now + 60000) {
+        return null; // Issued in future
+      }
+    }
+
     return payload;
-  } catch (e) {
+  } catch (err) {
+    // Malformed token or JSON parsing error
     return null;
   }
 }
@@ -197,12 +506,15 @@ function generateCsrfToken(userId = 'guest') {
     rnd: crypto.randomBytes(16).toString('hex')
   };
   const payloadStr = Buffer.from(JSON.stringify(payload)).toString('base64url');
-  const signature = crypto.createHmac('sha256', AUTH_SECRET).update(`csrf:${payloadStr}`).digest('base64url');
+  const signature = crypto
+    .createHmac('sha256', jwtSecretState.primarySecret)
+    .update(`csrf:${payloadStr}`)
+    .digest('base64url');
   return `${payloadStr}.${signature}`;
 }
 
 /**
- * Verifies an anti-CSRF token
+ * Verifies an anti-CSRF token with key rotation support
  * @param {string} token
  * @returns {boolean} isValid
  */
@@ -213,12 +525,27 @@ function verifyCsrfToken(token) {
 
   const [payloadStr, signature] = parts;
   try {
-    const expectedSig = crypto.createHmac('sha256', AUTH_SECRET).update(`csrf:${payloadStr}`).digest('base64url');
     const sigBuf = Buffer.from(signature);
-    const expBuf = Buffer.from(expectedSig);
-    if (sigBuf.length !== expBuf.length || !crypto.timingSafeEqual(sigBuf, expBuf)) {
-      return false;
+    const candidateSecrets = [
+      jwtSecretState.primarySecret,
+      ...jwtSecretState.previousSecrets
+    ].filter(Boolean);
+
+    let signatureValid = false;
+    for (const secret of candidateSecrets) {
+      const expectedSig = crypto
+        .createHmac('sha256', secret)
+        .update(`csrf:${payloadStr}`)
+        .digest('base64url');
+      const expBuf = Buffer.from(expectedSig);
+      if (sigBuf.length === expBuf.length && crypto.timingSafeEqual(sigBuf, expBuf)) {
+        signatureValid = true;
+        break;
+      }
     }
+
+    if (!signatureValid) return false;
+
     const payload = JSON.parse(Buffer.from(payloadStr, 'base64url').toString('utf8'));
     if (payload.exp && Date.now() > payload.exp) {
       return false; // Expired
@@ -236,6 +563,10 @@ module.exports = {
   verifyToken,
   generateCsrfToken,
   verifyCsrfToken,
+  rotateJwtSecret,
+  getJwtSecurityDetails,
+  isCryptographicallySecure,
+  initializeJwtSecret,
   authenticate,
   requireAuth,
   requirePermission,

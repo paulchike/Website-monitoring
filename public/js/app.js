@@ -61,13 +61,13 @@ class NOCDashboard {
     this.init();
   }
 
-  async init() {
+  init() {
     this.initClock();
     this.initAutoRefresh();
     this.initSound();
     this.initEventListeners();
-    await this.fetchCsrfToken();
     this.initAuth();
+    this.fetchCsrfToken();
     this.initWebSocket();
     this.setView(this.currentView);
     this.fetchInitialSummary();
@@ -1671,6 +1671,9 @@ class NOCDashboard {
      RBAC & Authentication Controller
      ======================================================================== */
   async initAuth() {
+    // Bind all authentication form listeners immediately to prevent native POST submissions
+    this.setupAuthEventListeners();
+
     // Only check session if an explicit session token exists in storage.
     // The landing page defaults to public view with NO active profile until user logs in.
     if (this.token) {
@@ -1686,8 +1689,6 @@ class NOCDashboard {
       };
       this.updateUserUI();
     }
-
-    this.setupAuthEventListeners();
   }
 
   async checkCurrentSession() {

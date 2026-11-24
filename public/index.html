@@ -758,14 +758,14 @@
         </div>
 
         <!-- Manual Login Form -->
-        <form id="form-auth-login" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px;">
+        <form id="form-auth-login" action="/login" method="POST" style="border-top: 1px solid rgba(255,255,255,0.08); padding-top: 16px;">
           <div class="form-group" style="margin-bottom: 12px;">
             <label for="auth-username" style="font-size: 11px; color: #cbd5e1;">Username</label>
-            <input type="text" id="auth-username" required placeholder="Enter username" style="background: #060b17; border-color: rgba(255,255,255,0.15);" />
+            <input type="text" id="auth-username" name="username" required placeholder="Enter username" style="background: #060b17; border-color: rgba(255,255,255,0.15);" />
           </div>
           <div class="form-group" style="margin-bottom: 16px;">
             <label for="auth-password" style="font-size: 11px; color: #cbd5e1;">Password</label>
-            <input type="password" id="auth-password" required placeholder="Enter password" style="background: #060b17; border-color: rgba(255,255,255,0.15);" />
+            <input type="password" id="auth-password" name="password" required placeholder="Enter password" style="background: #060b17; border-color: rgba(255,255,255,0.15);" />
           </div>
           <div id="auth-error-msg" class="hidden" style="color: #f87171; font-size: 12px; margin-bottom: 12px; padding: 8px; background: rgba(239, 68, 68, 0.1); border-radius: 4px; border: 1px solid rgba(239, 68, 68, 0.3);"></div>
           <button type="submit" class="btn btn-primary" style="width: 100%; justify-content: center;">Sign In to Session</button>

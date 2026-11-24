@@ -11,7 +11,9 @@ const {
   verifyPassword,
   hashPassword,
   generateCsrfToken,
-  verifyCsrfToken
+  verifyCsrfToken,
+  rotateJwtSecret,
+  getJwtSecurityDetails
 } = require('./auth');
 const { validateUrlForSSRF } = require('./ssrf');
 
@@ -72,8 +74,9 @@ function csrfProtection(req, res, next) {
     }
   }
 
-  // 2. Exempt public authentication login endpoint (session not yet established)
-  if (req.path === '/auth/login') {
+  // 2. Exempt public authentication login endpoints (session not yet established)
+  const normPath = (req.path || '').replace(/^\/api/, '');
+  if (req.path === '/auth/login' || req.path === '/login' || normPath === '/auth/login' || normPath === '/login') {
     return next();
   }
 
@@ -111,8 +114,32 @@ router.get('/auth/csrf-token', (req, res) => {
   });
 });
 
-// POST /api/auth/login
-router.post('/auth/login', (req, res) => {
+// GET /api/auth/jwt-status (Inspect cryptographic status of JWT secret)
+router.get('/auth/jwt-status', requireAuth, (req, res) => {
+  res.json({
+    success: true,
+    jwtSecurity: getJwtSecurityDetails()
+  });
+});
+
+// POST /api/auth/jwt-rotate (Admin only: rotate JWT signing key)
+router.post('/auth/jwt-rotate', requireAuth, requirePermission('can_manage_users'), (req, res) => {
+  try {
+    const result = rotateJwtSecret(req.body ? req.body.customSecret : null);
+    logAudit(req, 'ROTATE_JWT_SECRET', null, `Rotated JWT HMAC secret key (source: ${result.source})`);
+    res.json({
+      success: true,
+      message: 'JWT HMAC secret rotated successfully. Active sessions remain valid under rotation grace keys.',
+      details: getJwtSecurityDetails(),
+      result
+    });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+// POST /api/auth/login and POST /api/login (supports both routes)
+router.post(['/auth/login', '/login'], (req, res) => {
   try {
     const { username, password } = req.body;
     if (!username || !password) {
